@@ -187,6 +187,7 @@ const baseStyles = `
         border-radius: 12px;
         font-weight: 600;
         cursor: pointer;
+        touch-action: manipulation;
         transition: all .2s;
         box-shadow: 0 6px 14px rgba(79, 70, 229, 0.25);
     }
@@ -593,7 +594,7 @@ body{background:#f4f5fb;padding:0;margin:0;}
 .section{background:#fff;border-radius:16px;box-shadow:0 12px 30px rgba(0,0,0,0.08);padding:24px;margin-bottom:18px;}
 .badge{padding:4px 8px;border-radius:8px;background:#eef2ff;color:#4338ca;font-weight:700;font-size:12px;}
 .table-wrap{overflow-x:auto;}
-input[type=checkbox]{width:16px;height:16px;}
+input[type=checkbox]{width:18px;height:18px;}
 .modal{position:fixed;top:0;left:0;width:100%;height:100%;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.35);backdrop-filter:blur(3px);z-index:1000;}
 .modal .dialog{background:#fff;border-radius:16px;padding:20px;min-width:320px;max-width:92vw;max-height:85vh;overflow:auto;box-shadow:0 15px 40px rgba(0,0,0,0.2);animation:fadeInUp .25s;}
 .modal .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
@@ -612,13 +613,13 @@ label.inline{display:flex;align-items:center;gap:8px;margin:6px 0;}
   .nav{flex-direction:column;align-items:flex-start;gap:10px;padding:12px 14px;}
   .nav-left{flex-wrap:wrap;gap:10px;}
   .tabs{width:100%;flex-wrap:wrap;gap:8px;}
-  .tab{flex:1 1 auto;text-align:center;padding:10px 12px;}
+  .tab{flex:1 1 auto;text-align:center;padding:10px 12px;min-height:44px;display:flex;align-items:center;justify-content:center;}
   .container{margin:16px auto;padding:0 12px;}
   .section{padding:16px;}
   .input-compact{max-width:100%;}
   .modal .dialog{min-width:unset;width:92vw;}
   .toolbar{gap:8px;}
-  .toolbar button{padding:10px 12px;font-size:13px;}
+  .toolbar button,.pagination button,.modal .footer button{padding:10px 12px;font-size:13px;min-height:44px;}
   .toolbar input,.toolbar select{padding:10px 12px;font-size:13px;}
   .search-box{width:100%;}
   .pagination{gap:6px;}
@@ -1268,12 +1269,66 @@ function renderInvitesPage(adminPath, globals) {
     adminPath,
     active: 'invites',
     content: `
+<style>
+.invite-tools,.invite-select-tools{align-items:center;}
+.invite-select-tools .chip{font-weight:700;display:inline-flex;align-items:center;justify-content:center;min-height:40px;}
+.invite-mobile-bar{display:none;}
+.invite-code{font-size:13px;word-break:break-all;}
+@media (max-width: 720px){
+  .invite-tools button,
+  .invite-select-tools button,
+  .pagination button{
+    flex:1 1 calc(50% - 8px);
+    min-height:44px;
+  }
+  .invite-select-tools .chip{
+    width:100%;
+    min-height:44px;
+  }
+  .invite-mobile-bar{
+    position:sticky;
+    bottom:12px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    margin-top:14px;
+    padding:12px;
+    border-radius:16px;
+    background:rgba(17,24,39,0.94);
+    box-shadow:0 16px 40px rgba(0,0,0,0.24);
+    z-index:20;
+  }
+  .invite-mobile-bar .meta{
+    color:#fff;
+    font-size:13px;
+    font-weight:800;
+    white-space:nowrap;
+  }
+  .invite-mobile-bar .actions{
+    display:flex;
+    gap:8px;
+    flex:1;
+    justify-content:flex-end;
+  }
+  .invite-mobile-bar .actions button{
+    min-height:44px;
+    box-shadow:none;
+  }
+}
+</style>
 <div class="section">
-  <div class="toolbar">
+  <div class="toolbar invite-tools">
     <button id="btnGen">🎲 生成邀请码</button>
     <button id="btnDelInvites" class="btn-danger">🗑️ 删除所选</button>
     <button id="btnExport">⬇️ 导出所选</button>
     <button id="btnRefreshInvites">🔄 刷新</button>
+  </div>
+  <div class="toolbar invite-select-tools">
+    <button id="btnSelectPage" class="btn-ghost">全选当前页</button>
+    <button id="btnSelectFiltered" class="btn-ghost">全选筛选结果</button>
+    <button id="btnClearInviteSelection" class="btn-ghost">清空选择</button>
+    <span id="inviteSelectionInfo" class="chip">未选择邀请码</span>
   </div>
   <div class="toolbar search-box">
     <span class="label" style="margin:0;">筛选/搜索：</span>
@@ -1311,9 +1366,9 @@ function renderInvitesPage(adminPath, globals) {
     <button id="goInvite">跳转</button>
   </div>
   <div class="table-wrap">
-    <table class="table">
+    <table class="table" id="inviteTable">
       <thead><tr>
-        <th><input type="checkbox" id="chkInviteAll"></th>
+        <th><input type="checkbox" id="chkInvitePage" title="全选当前页"></th>
         <th data-sort="code">邀请码 <span class="arrow" id="iarr-code">↕</span></th>
         <th data-sort="limit">限制次数 <span class="arrow" id="iarr-limit">↕</span></th>
         <th data-sort="used">已用 <span class="arrow" id="iarr-used">↕</span></th>
@@ -1324,6 +1379,13 @@ function renderInvitesPage(adminPath, globals) {
       </tr></thead>
       <tbody id="inviteBody"></tbody>
     </table>
+  </div>
+  <div class="invite-mobile-bar" id="inviteMobileBar">
+    <div class="meta" id="inviteMobileCount">未选择</div>
+    <div class="actions">
+      <button id="btnMobileExport" class="btn-ghost">导出</button>
+      <button id="btnMobileDelete" class="btn-danger">删除</button>
+    </div>
   </div>
 </div>
 
@@ -1363,6 +1425,7 @@ let invitePage=1;
 let invitePageSize=20;
 let iSearchField='code';
 let iSearchText='';
+const selectedInviteCodes = new Set();
 
 function updateIArrows(){
   ['code','limit','used','status','scope','createdAt','usedAt'].forEach(k=>{
@@ -1384,64 +1447,14 @@ function buildScopeOptions(){
   }).join('') || '<div style="color:#9ca3af;">暂无全局/订阅</div>';
 }
 
-document.getElementById('btnGen').onclick=()=>{buildScopeOptions(); openModal('modalGen');};
-document.getElementById('btnRefreshInvites').onclick=loadInvites;
-document.getElementById('chkInviteAll').onchange=(e)=>{ document.querySelectorAll('.inviteChk').forEach(c=>c.checked=e.target.checked); };
+function normalizeInviteSelection(){
+  const existing = new Set(invitesCache.map(item => item.code));
+  Array.from(selectedInviteCodes).forEach(code => {
+    if(!existing.has(code)) selectedInviteCodes.delete(code);
+  });
+}
 
-document.getElementById('doGen').onclick=async()=>{
-  const chars=[];
-  if(document.getElementById('cUpper').checked) chars.push('upper');
-  if(document.getElementById('cLower').checked) chars.push('lower');
-  if(document.getElementById('cDigit').checked) chars.push('digit');
-  if(document.getElementById('cSym').checked) chars.push('sym');
-  if(!chars.length) return alert('至少选择一个字符集');
-  const scopes = Array.from(document.querySelectorAll('.scopeChk:checked')).map(c=>({globalId:c.getAttribute('data-g'), skuName:c.getAttribute('data-sku')}));
-  if(!scopes.length) return alert('至少选择一个可用范围');
-  const payload={
-    sets:chars,
-    length:parseInt(document.getElementById('cLen').value)||16,
-    quantity:parseInt(document.getElementById('cQty').value)||1,
-    limit:parseInt(document.getElementById('cLimit').value)||1,
-    scopes
-  };
-  const res=await fetch(adminPath+'/api/invites/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-  const data=await res.json();
-  if(data.success){ alert('生成完成，新增 '+data.count+' 条'); closeModal('modalGen'); loadInvites(); }
-  else alert(data.message||'生成失败');
-};
-
-document.getElementById('btnDelInvites').onclick=async()=>{
-  const sel = Array.from(document.querySelectorAll('.inviteChk:checked')).map(c=>c.value);
-  if(!sel.length) return alert('请选择邀请码');
-  if(!confirm('确认删除选中邀请码？')) return;
-  await fetch(adminPath+'/api/invites/bulk',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({codes:sel})});
-  loadInvites();
-};
-
-document.getElementById('btnExport').onclick=()=>{
-  const sel = Array.from(document.querySelectorAll('.inviteChk:checked')).map(c=>c.value);
-  if(!sel.length) return alert('请选择邀请码');
-  const blob = new Blob([sel.join('\\n')], {type:'text/plain'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href=url; a.download='invites.txt'; a.click();
-  URL.revokeObjectURL(url);
-};
-
-document.getElementById('sortKey').onchange=()=>{ sortKey=document.getElementById('sortKey').value; renderInvites(); };
-document.querySelectorAll('th[data-sort]').forEach(th=>{
-  th.onclick=()=>{ const k=th.getAttribute('data-sort'); if(k===sortKey) sortDir*=-1; else {sortKey=k; sortDir=1;} renderInvites(); };
-});
-
-document.getElementById('pageSizeInvite').onchange=(e)=>{ invitePageSize=parseInt(e.target.value)||20; invitePage=1; renderInvites(); };
-document.getElementById('prevInvite').onclick=()=>{ if(invitePage>1){ invitePage--; renderInvites(); } };
-document.getElementById('nextInvite').onclick=()=>{ const total=Math.max(1,Math.ceil(invitesCache.length/invitePageSize)); if(invitePage<total){ invitePage++; renderInvites(); } };
-document.getElementById('goInvite').onclick=()=>{ const val=parseInt(document.getElementById('jumpInvite').value)||1; const total=Math.max(1,Math.ceil(invitesCache.length/invitePageSize)); invitePage=Math.min(Math.max(1,val), total); renderInvites(); };
-
-document.getElementById('iSearchBtn').onclick=()=>{ iSearchField=document.getElementById('iSearchField').value; iSearchText=document.getElementById('iSearchText').value.trim(); invitePage=1; renderInvites(); };
-document.getElementById('iClearBtn').onclick=()=>{ document.getElementById('iSearchText').value=''; iSearchText=''; invitePage=1; renderInvites(); };
-
-function renderInvites(){
-  updateIArrows();
+function getFilteredInvites(){
   let list=[...invitesCache];
   if(iSearchText){
     const t=iSearchText.toLowerCase();
@@ -1466,19 +1479,159 @@ function renderInvites(){
       return sortDir * (((a.used>=a.limit)?1:0) - ((b.used>=b.limit)?1:0));
     }
     if(sortKey==='scope'){
-      const sa=(a.allowed||[]).map(s=>s.globalId+s.skuName).join(','); 
+      const sa=(a.allowed||[]).map(s=>s.globalId+s.skuName).join(',');
       const sb=(b.allowed||[]).map(s=>s.globalId+s.skuName).join(',');
       return sortDir * sa.localeCompare(sb);
     }
-    const va=a[sortKey]||0, vb=b[sortKey]||0;
+    const va=a[sortKey]||0;
+    const vb=b[sortKey]||0;
     if(typeof va==='string') return sortDir*va.localeCompare(vb);
     return sortDir*((va>vb)-(va<vb));
   });
-  const total=list.length;
-  const totalPages=Math.max(1,Math.ceil(total/invitePageSize));
+  return list;
+}
+
+function getCurrentPageData(list){
+  const totalPages=Math.max(1,Math.ceil(list.length/invitePageSize));
   invitePage=Math.min(invitePage,totalPages);
   const start=(invitePage-1)*invitePageSize;
-  const pageData=list.slice(start,start+invitePageSize);
+  return {
+    totalPages,
+    start,
+    pageData:list.slice(start,start+invitePageSize),
+  };
+}
+
+function getSelectedInviteCodes(){
+  normalizeInviteSelection();
+  return Array.from(selectedInviteCodes);
+}
+
+function setBulkActionDisabled(disabled){
+  ['btnDelInvites','btnExport','btnMobileDelete','btnMobileExport'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.disabled = disabled;
+  });
+}
+
+function updateInviteSelectionState(filteredList, pageData){
+  normalizeInviteSelection();
+  const selectedCount = selectedInviteCodes.size;
+  const visibleSelected = pageData.filter(item => selectedInviteCodes.has(item.code)).length;
+  const selectionInfo = document.getElementById('inviteSelectionInfo');
+  const mobileCount = document.getElementById('inviteMobileCount');
+  const pageToggle = document.getElementById('chkInvitePage');
+
+  selectionInfo.innerText = selectedCount
+    ? '已选 ' + selectedCount + ' 条 · 当前筛选 ' + filteredList.length + ' 条'
+    : '未选择邀请码';
+  mobileCount.innerText = selectedCount ? '已选 ' + selectedCount + ' 条' : '未选择';
+
+  pageToggle.checked = !!pageData.length && visibleSelected === pageData.length;
+  pageToggle.indeterminate = visibleSelected > 0 && visibleSelected < pageData.length;
+  setBulkActionDisabled(selectedCount === 0);
+}
+
+document.getElementById('btnGen').onclick=()=>{buildScopeOptions(); openModal('modalGen');};
+document.getElementById('btnRefreshInvites').onclick=loadInvites;
+document.getElementById('btnSelectPage').onclick=()=>{
+  const filtered = getFilteredInvites();
+  const { pageData } = getCurrentPageData(filtered);
+  pageData.forEach(item => selectedInviteCodes.add(item.code));
+  renderInvites();
+};
+document.getElementById('btnSelectFiltered').onclick=()=>{
+  getFilteredInvites().forEach(item => selectedInviteCodes.add(item.code));
+  renderInvites();
+};
+document.getElementById('btnClearInviteSelection').onclick=()=>{
+  selectedInviteCodes.clear();
+  renderInvites();
+};
+document.getElementById('chkInvitePage').onchange=(e)=>{
+  const filtered = getFilteredInvites();
+  const { pageData } = getCurrentPageData(filtered);
+  pageData.forEach(item => {
+    if(e.target.checked) selectedInviteCodes.add(item.code);
+    else selectedInviteCodes.delete(item.code);
+  });
+  renderInvites();
+};
+
+document.getElementById('doGen').onclick=async()=>{
+  const chars=[];
+  if(document.getElementById('cUpper').checked) chars.push('upper');
+  if(document.getElementById('cLower').checked) chars.push('lower');
+  if(document.getElementById('cDigit').checked) chars.push('digit');
+  if(document.getElementById('cSym').checked) chars.push('sym');
+  if(!chars.length) return alert('至少选择一个字符集');
+  const scopes = Array.from(document.querySelectorAll('.scopeChk:checked')).map(c=>({globalId:c.getAttribute('data-g'), skuName:c.getAttribute('data-sku')}));
+  if(!scopes.length) return alert('至少选择一个可用范围');
+  const payload={
+    sets:chars,
+    length:parseInt(document.getElementById('cLen').value)||16,
+    quantity:parseInt(document.getElementById('cQty').value)||1,
+    limit:parseInt(document.getElementById('cLimit').value)||1,
+    scopes
+  };
+  const res=await fetch(adminPath+'/api/invites/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  const data=await res.json();
+  if(data.success){ alert('生成完成，新增 '+data.count+' 条'); closeModal('modalGen'); loadInvites(); }
+  else alert(data.message||'生成失败');
+};
+
+async function deleteSelectedInvites(){
+  const sel = getSelectedInviteCodes();
+  if(!sel.length) return alert('请选择邀请码');
+  if(!confirm('确认删除选中邀请码？')) return;
+  await fetch(adminPath+'/api/invites/bulk',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({codes:sel})});
+  selectedInviteCodes.clear();
+  loadInvites();
+}
+
+function exportSelectedInvites(){
+  const sel = getSelectedInviteCodes();
+  if(!sel.length) return alert('请选择邀请码');
+  const blob = new Blob([sel.join('\\n')], {type:'text/plain'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download='invites.txt'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById('btnDelInvites').onclick=deleteSelectedInvites;
+document.getElementById('btnExport').onclick=exportSelectedInvites;
+document.getElementById('btnMobileDelete').onclick=deleteSelectedInvites;
+document.getElementById('btnMobileExport').onclick=exportSelectedInvites;
+
+document.getElementById('sortKey').onchange=()=>{ sortKey=document.getElementById('sortKey').value; renderInvites(); };
+document.querySelectorAll('th[data-sort]').forEach(th=>{
+  th.onclick=()=>{ const k=th.getAttribute('data-sort'); if(k===sortKey) sortDir*=-1; else {sortKey=k; sortDir=1;} renderInvites(); };
+});
+
+document.getElementById('pageSizeInvite').onchange=(e)=>{ invitePageSize=parseInt(e.target.value)||20; invitePage=1; renderInvites(); };
+document.getElementById('prevInvite').onclick=()=>{ if(invitePage>1){ invitePage--; renderInvites(); } };
+document.getElementById('nextInvite').onclick=()=>{
+  const total=Math.max(1,Math.ceil(getFilteredInvites().length/invitePageSize));
+  if(invitePage<total){ invitePage++; renderInvites(); }
+};
+document.getElementById('goInvite').onclick=()=>{
+  const val=parseInt(document.getElementById('jumpInvite').value)||1;
+  const total=Math.max(1,Math.ceil(getFilteredInvites().length/invitePageSize));
+  invitePage=Math.min(Math.max(1,val), total);
+  renderInvites();
+};
+
+document.getElementById('iSearchBtn').onclick=()=>{ iSearchField=document.getElementById('iSearchField').value; iSearchText=document.getElementById('iSearchText').value.trim(); invitePage=1; renderInvites(); };
+document.getElementById('iClearBtn').onclick=()=>{ document.getElementById('iSearchText').value=''; iSearchText=''; invitePage=1; renderInvites(); };
+document.getElementById('iSearchText').addEventListener('keydown',(e)=>{ if(e.key==='Enter'){ e.preventDefault(); document.getElementById('iSearchBtn').click(); } });
+document.getElementById('jumpInvite').addEventListener('keydown',(e)=>{ if(e.key==='Enter'){ e.preventDefault(); document.getElementById('goInvite').click(); } });
+
+function renderInvites(){
+  updateIArrows();
+  normalizeInviteSelection();
+  const list = getFilteredInvites();
+  const total=list.length;
+  const { totalPages, pageData } = getCurrentPageData(list);
   const body=document.getElementById('inviteBody');
   body.innerHTML = pageData.map(c=>{
     const status = c.used >= c.limit ? '<span class="tag" style="background:#fee2e2;color:#991b1b;">已用完</span>' : '<span class="tag" style="background:#dcfce7;color:#166534;">可用</span>';
@@ -1487,8 +1640,8 @@ function renderInvites(){
       return '<span class="tag">'+(g?g.label:'?')+' / '+s.skuName+'</span>';
     }).join('') || '<span style="color:#9ca3af;">未设置</span>';
     return '<tr>'+
-      '<td data-label="选择"><input type="checkbox" class="inviteChk" value="'+c.code+'"></td>'+
-      '<td data-label="邀请码"><code>'+c.code+'</code></td>'+
+      '<td data-label="选择"><input type="checkbox" class="inviteChk" value="'+c.code+'" '+(selectedInviteCodes.has(c.code)?'checked':'')+'></td>'+
+      '<td data-label="邀请码"><code class="invite-code">'+c.code+'</code></td>'+
       '<td data-label="限制次数">'+c.limit+'</td>'+
       '<td data-label="已用">'+c.used+'</td>'+
       '<td data-label="状态">'+status+'</td>'+
@@ -1498,12 +1651,21 @@ function renderInvites(){
     '</tr>';
   }).join('') || '<tr><td colspan="8" style="text-align:center;">暂无邀请码</td></tr>';
   document.getElementById('pageInfoInvite').innerText='第 '+invitePage+' / '+totalPages+' 页 · 共 '+total+' 条';
+  document.querySelectorAll('.inviteChk').forEach(chk=>{
+    chk.onchange=()=>{
+      if(chk.checked) selectedInviteCodes.add(chk.value);
+      else selectedInviteCodes.delete(chk.value);
+      updateInviteSelectionState(list, pageData);
+    };
+  });
+  updateInviteSelectionState(list, pageData);
 }
 
 async function loadInvites(){
   const res = await fetch(adminPath+'/api/invites?sort='+sortKey);
   const data = await res.json();
   invitesCache = data;
+  normalizeInviteSelection();
   renderInvites();
 }
 
@@ -1676,6 +1838,52 @@ function filterProtectedUsers(list, env, cfg) {
   });
 }
 
+function validateInviteUsage(invites, inviteCode, globalId, skuName) {
+  const idx = invites.findIndex((item) => item.code === inviteCode);
+  if (idx === -1) return { ok: false, message: '邀请码无效' };
+
+  const invite = invites[idx];
+  const used = Number(invite.used || 0);
+  const limit = Number(invite.limit || 0);
+  if (used >= limit) return { ok: false, message: '邀请码已用完' };
+
+  const allowed = Array.isArray(invite.allowed) ? invite.allowed : [];
+  const matched = allowed.some((item) => item.globalId === globalId && item.skuName === skuName);
+  if (!matched) return { ok: false, message: '邀请码不允许当前全局/订阅' };
+
+  return { ok: true, idx, invite };
+}
+
+async function consumeInviteAfterSuccess(env, inviteCode, globalId, skuName) {
+  const invites = await getInvites(env);
+  const result = validateInviteUsage(invites, inviteCode, globalId, skuName);
+  if (!result.ok) return result;
+
+  invites[result.idx] = {
+    ...result.invite,
+    used: Number(result.invite.used || 0) + 1,
+    usedAt: Date.now(),
+  };
+  await saveInvites(env, invites);
+  return { ok: true };
+}
+
+async function rollbackCreatedUser(global, userId, token, fetchImpl = fetch) {
+  try {
+    const accessToken = token || (await getAccessTokenForGlobal(global, fetchImpl));
+    const resp = await fetchImpl(`https://graph.microsoft.com/v1.0/users/${userId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (resp.ok || resp.status === 204 || resp.status === 404) return { ok: true };
+
+    const details = await resp.text().catch(() => '');
+    return { ok: false, details: details.slice(0, 300) };
+  } catch (error) {
+    return { ok: false, details: error?.message || 'rollback_failed' };
+  }
+}
+
 async function handleRegister(env, req, cfg) {
   const form = await req.formData();
   const username = (form.get('username')||'').trim();
@@ -1695,16 +1903,8 @@ async function handleRegister(env, req, cfg) {
 
   // invitation check
   if(cfg.invite?.enabled){
-    const invites = await getInvites(env);
-    const idx = invites.findIndex(c=>c.code===inviteCode);
-    if(idx===-1) return jsonResponse({success:false,message:'邀请码无效'},400);
-    const c = invites[idx];
-    if(c.used >= c.limit) return jsonResponse({success:false,message:'邀请码已用完'},400);
-    const allowed = c.allowed||[];
-    const matched = allowed.some(a=>a.globalId===globalId && a.skuName===skuName);
-    if(!matched) return jsonResponse({success:false,message:'邀请码不允许当前全局/订阅'},400);
-    c.used += 1; c.usedAt = Date.now();
-    invites[idx]=c; await saveInvites(env,invites);
+    const inviteCheck = validateInviteUsage(await getInvites(env), inviteCode, globalId, skuName);
+    if(!inviteCheck.ok) return jsonResponse({success:false,message:inviteCheck.message},400);
   }
 
   // turnstile verify
@@ -1754,7 +1954,30 @@ async function handleRegister(env, req, cfg) {
   });
   if(!licResp.ok){
     const err = await licResp.json().catch(()=>({}));
-    return jsonResponse({success:false,message:'账号已创建但订阅分配失败: '+(err.error?.message||'未知')},400);
+    const rollback = await rollbackCreatedUser(global, newUser.id, token);
+    const detail = err.error?.message || '未知错误';
+    if(!rollback.ok){
+      return jsonResponse({success:false,message:'订阅分配失败，且账号回滚失败，请管理员手动检查：' + detail},400);
+    }
+    return jsonResponse({success:false,message:'订阅分配失败，已回滚新建账号：' + detail},400);
+  }
+  if(cfg.invite?.enabled){
+    try{
+      const consumeResult = await consumeInviteAfterSuccess(env, inviteCode, globalId, skuName);
+      if(!consumeResult.ok){
+        const rollback = await rollbackCreatedUser(global, newUser.id, token);
+        if(!rollback.ok){
+          return jsonResponse({success:false,message:'邀请码状态冲突，且账号回滚失败，请管理员手动检查'},409);
+        }
+        return jsonResponse({success:false,message:(consumeResult.message || '邀请码不可用') + '，已回滚本次注册'},409);
+      }
+    }catch(error){
+      const rollback = await rollbackCreatedUser(global, newUser.id, token);
+      if(!rollback.ok){
+        return jsonResponse({success:false,message:'邀请码保存失败，且账号回滚失败，请管理员手动检查'},500);
+      }
+      return jsonResponse({success:false,message:'邀请码保存失败，已回滚本次注册'},500);
+    }
   }
   return jsonResponse({success:true,email:userEmail});
 }
