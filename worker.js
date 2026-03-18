@@ -136,6 +136,16 @@ function disableSelectIfSingle(arr) {
   return arr.length <= 1;
 }
 
+function escapeHtml(value) {
+  return (value ?? '')
+    .toString()
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function checkPasswordComplexity(pwd){
   if(!pwd || pwd.length<8) return false;
   let s=0;
@@ -651,6 +661,7 @@ label.inline{display:flex;align-items:center;gap:8px;margin:6px 0;}
   <div class="tabs">
     <a class="tab ${active==='users'?'active':''}" href="${adminPath}/users">用户</a>
     <a class="tab ${active==='globals'?'active':''}" href="${adminPath}/globals">全局账户</a>
+    <a class="tab ${active==='apps'?'active':''}" href="${adminPath}/enterprise-apps">企业应用</a>
     <a class="tab ${active==='invites'?'active':''}" href="${adminPath}/invites">邀请码</a>
     <a class="tab ${active==='settings'?'active':''}" href="${adminPath}/settings">设置</a>
   </div>
@@ -1263,6 +1274,325 @@ loadGlobals();
   });
 }
 
+function renderEnterpriseAppsPage(adminPath) {
+  return adminLayout({
+    title: '企业应用',
+    adminPath,
+    active: 'apps',
+    content: `
+<div class="section">
+  <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start;">
+    <div>
+      <h3 style="margin:0 0 8px;">管理员同意请求</h3>
+      <div style="color:#6b7280;font-size:13px;line-height:1.7;max-width:860px;">
+        这里只显示 <strong>待审批</strong> 的企业应用请求。功能依赖 Microsoft Graph 应用权限 <code>ConsentRequest.ReadWrite.All</code>，
+        并且对应全局应用必须已经完成管理员同意。
+      </div>
+    </div>
+    <div class="toolbar" style="margin:0;">
+      <button id="btnRefreshConsent">🔄 刷新</button>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <style>
+    .consent-filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;}
+    .consent-requester{margin-bottom:10px;}
+    .consent-requester:last-child{margin-bottom:0;}
+    .consent-chip-list{display:flex;flex-wrap:wrap;gap:6px;}
+    .consent-actions{display:flex;gap:8px;flex-wrap:wrap;}
+    .consent-actions button{min-width:96px;}
+    .consent-error{padding:12px 14px;border-radius:12px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;margin-bottom:12px;}
+    .consent-subtle{color:#6b7280;font-size:12px;line-height:1.6;}
+    @media (max-width: 720px){
+      .consent-actions{width:100%;}
+      .consent-actions button{width:100%;}
+    }
+  </style>
+
+  <div id="consentGlobalFilters" class="consent-filters"></div>
+
+  <div class="toolbar" style="justify-content:space-between;align-items:center;">
+    <div class="search-box">
+      <input class="input-compact" id="consentSearch" placeholder="搜索应用、App ID、请求人、权限">
+      <button id="btnConsentSearch">搜索</button>
+      <button id="btnConsentClear" class="btn-ghost">清空</button>
+    </div>
+    <div id="consentSummary" class="consent-subtle"></div>
+  </div>
+
+  <div id="consentErrors"></div>
+
+  <div class="table-wrap">
+    <table class="table" id="consentTable">
+      <thead>
+        <tr>
+          <th>全局</th>
+          <th>应用</th>
+          <th>待审批权限</th>
+          <th>请求人</th>
+          <th>申请理由</th>
+          <th>最近请求</th>
+          <th>状态</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="consentBody">
+        <tr><td colspan="8" style="text-align:center;">正在加载...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="modal" id="modalConsentDecision">
+  <div class="dialog">
+    <div class="header">
+      <strong id="consentDecisionTitle">审批请求</strong>
+      <button class="modal-close" id="btnConsentDecisionClose" type="button">×</button>
+    </div>
+    <div id="consentDecisionDesc" style="color:#6b7280;font-size:13px;line-height:1.7;"></div>
+    <div class="row" style="margin-top:12px;">
+      <span class="label">审批备注</span>
+      <textarea id="consentDecisionJustification" rows="4" placeholder="批准可留空，拒绝建议填写原因"></textarea>
+    </div>
+    <div class="footer">
+      <button type="button" class="btn-ghost" id="btnConsentDecisionCancel">取消</button>
+      <button type="button" id="btnConsentDecisionConfirm">确认</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const adminPath='${adminPath}';
+let consentRequestsCache=[];
+let consentErrorsCache=[];
+let consentFilterGlobal='ALL';
+let consentSearchText='';
+let consentDecisionContext=null;
+
+function esc(v){
+  return (v ?? '')
+    .toString()
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#39;');
+}
+function openModal(id){ document.getElementById(id).style.display='flex'; }
+function closeModal(id){ document.getElementById(id).style.display='none'; }
+function formatDate(v){ return v ? new Date(v).toLocaleString() : '-'; }
+
+function renderConsentErrors(){
+  const wrap = document.getElementById('consentErrors');
+  if(!consentErrorsCache.length){ wrap.innerHTML=''; return; }
+  wrap.innerHTML = consentErrorsCache.map(item=>{
+    return '<div class="consent-error"><strong>'+esc(item.globalLabel || '未命名全局')+'</strong>：'+esc(item.message || '读取失败')+'</div>';
+  }).join('');
+}
+
+function renderConsentGlobalFilters(){
+  const wrap = document.getElementById('consentGlobalFilters');
+  const globalMap = new Map();
+  consentRequestsCache.forEach(item=>{
+    if(item.globalId) globalMap.set(item.globalId, item.globalLabel || '未命名全局');
+  });
+  if(!globalMap.size){ wrap.innerHTML=''; return; }
+  const items = [{id:'ALL',label:'全部'}].concat(Array.from(globalMap.entries()).map(([id,label])=>({id,label})));
+  wrap.innerHTML = items.map(item=>{
+    const active = consentFilterGlobal === item.id ? ' active' : '';
+    return '<button type="button" class="pill'+active+'" data-global="'+esc(item.id)+'">'+esc(item.label)+'</button>';
+  }).join('');
+  wrap.querySelectorAll('.pill').forEach(btn=>{
+    btn.onclick=()=>{
+      consentFilterGlobal = btn.getAttribute('data-global') || 'ALL';
+      renderConsentRequests();
+    };
+  });
+}
+
+function getFilteredConsentRequests(){
+  let list = [...consentRequestsCache];
+  if(consentFilterGlobal !== 'ALL'){
+    list = list.filter(item => item.globalId === consentFilterGlobal);
+  }
+  if(consentSearchText){
+    const txt = consentSearchText.toLowerCase();
+    list = list.filter(item=>{
+      const requestors = (item.requestors || []).map(x => [x.displayName, x.userPrincipalName].filter(Boolean).join(' ')).join(' ');
+      const reasons = (item.reasons || []).join(' ');
+      const scopes = (item.pendingScopes || []).join(' ');
+      const haystack = [
+        item.globalLabel,
+        item.appDisplayName,
+        item.appId,
+        requestors,
+        reasons,
+        scopes,
+      ].join(' ').toLowerCase();
+      return haystack.includes(txt);
+    });
+  }
+  return list.sort((a,b)=>{
+    const ta = new Date(a.latestCreatedDateTime || 0).getTime();
+    const tb = new Date(b.latestCreatedDateTime || 0).getTime();
+    return tb - ta;
+  });
+}
+
+function openConsentDecision(decision, globalId, appConsentRequestId){
+  const item = consentRequestsCache.find(x => x.globalId === globalId && x.appConsentRequestId === appConsentRequestId);
+  if(!item) return;
+  consentDecisionContext = { decision, globalId, appConsentRequestId, appDisplayName: item.appDisplayName || '未命名应用' };
+  const isDeny = decision === 'Deny';
+  document.getElementById('consentDecisionTitle').innerText = isDeny ? '拒绝企业应用请求' : '批准企业应用请求';
+  document.getElementById('consentDecisionDesc').innerHTML =
+    '将对 <strong>'+esc(item.appDisplayName || '未命名应用')+'</strong> 的 <strong>'+esc(String(item.pendingCount || 0))+'</strong> 条待审批请求执行'+(isDeny ? '拒绝' : '批准')+'。'
+    + (isDeny ? '<br>建议填写拒绝原因，便于后续审计。' : '<br>批准时备注可留空。');
+  document.getElementById('consentDecisionJustification').value = '';
+  document.getElementById('btnConsentDecisionConfirm').innerText = isDeny ? '确认拒绝' : '确认批准';
+  openModal('modalConsentDecision');
+}
+
+function renderConsentRequests(){
+  renderConsentGlobalFilters();
+  renderConsentErrors();
+  const list = getFilteredConsentRequests();
+  document.getElementById('consentSummary').innerText = '当前筛选 ' + list.length + ' 条待审批请求';
+  const body = document.getElementById('consentBody');
+  body.innerHTML = list.map(item=>{
+    const scopes = (item.pendingScopes || []).length
+      ? '<div class="consent-chip-list">'+(item.pendingScopes || []).map(x => '<span class="tag">'+esc(x)+'</span>').join('')+'</div>'
+      : '<span style="color:#9ca3af;">未返回权限</span>';
+    const requestors = (item.requestors || []).length
+      ? (item.requestors || []).map(x=>{
+          const name = x.displayName || x.userPrincipalName || '未知用户';
+          const upn = x.userPrincipalName && x.userPrincipalName !== name ? '<div class="consent-subtle">'+esc(x.userPrincipalName)+'</div>' : '';
+          return '<div class="consent-requester"><strong>'+esc(name)+'</strong>'+upn+'</div>';
+        }).join('')
+      : '<span style="color:#9ca3af;">未知</span>';
+    const reasons = (item.reasons || []).length
+      ? '<div class="consent-chip-list">'+(item.reasons || []).map(x => '<span class="tag">'+esc(x)+'</span>').join('')+'</div>'
+      : '<span style="color:#9ca3af;">未填写</span>';
+    const app = '<strong>'+esc(item.appDisplayName || '未命名应用')+'</strong>'
+      + '<div class="consent-subtle">App ID: '+esc(item.appId || '-')+'</div>'
+      + '<div class="consent-subtle">请求 ID: '+esc(item.appConsentRequestId || '-')+'</div>';
+    const status = '<span class="tag" style="background:#fef3c7;color:#92400e;">待审批 '+esc(String(item.pendingCount || 0))+' 条</span>';
+    const actions = '<div class="consent-actions">'
+      + '<button type="button" class="btn-approve" data-global="'+esc(item.globalId)+'" data-id="'+esc(item.appConsentRequestId)+'">批准全部</button>'
+      + '<button type="button" class="btn-danger btn-deny" data-global="'+esc(item.globalId)+'" data-id="'+esc(item.appConsentRequestId)+'">拒绝全部</button>'
+      + '</div>';
+    return '<tr>'
+      + '<td data-label="全局">'+esc(item.globalLabel || '-')</td>'
+      + '<td data-label="应用">'+app+'</td>'
+      + '<td data-label="待审批权限">'+scopes+'</td>'
+      + '<td data-label="请求人">'+requestors+'</td>'
+      + '<td data-label="申请理由">'+reasons+'</td>'
+      + '<td data-label="最近请求">'+esc(formatDate(item.latestCreatedDateTime))+'</td>'
+      + '<td data-label="状态">'+status+'</td>'
+      + '<td data-label="操作">'+actions+'</td>'
+      + '</tr>';
+  }).join('') || '<tr><td colspan="8" style="text-align:center;">暂无待审批的企业应用请求</td></tr>';
+
+  document.querySelectorAll('.btn-approve').forEach(btn=>{
+    btn.onclick=()=>openConsentDecision('Approve', btn.getAttribute('data-global'), btn.getAttribute('data-id'));
+  });
+  document.querySelectorAll('.btn-deny').forEach(btn=>{
+    btn.onclick=()=>openConsentDecision('Deny', btn.getAttribute('data-global'), btn.getAttribute('data-id'));
+  });
+}
+
+async function loadConsentRequests(){
+  const btn = document.getElementById('btnRefreshConsent');
+  btn.disabled = true;
+  btn.innerText = '正在刷新...';
+  try{
+    const res = await fetch(adminPath + '/api/consent-requests');
+    const data = await res.json().catch(()=>({}));
+    consentRequestsCache = Array.isArray(data.items) ? data.items : [];
+    consentErrorsCache = Array.isArray(data.errors) ? data.errors : [];
+    if(!res.ok && !consentErrorsCache.length){
+      consentErrorsCache = [{globalLabel:'系统', message:data.message || '加载失败'}];
+    }
+    renderConsentRequests();
+  }catch(err){
+    consentRequestsCache = [];
+    consentErrorsCache = [{globalLabel:'系统', message:'网络异常，请稍后重试'}];
+    renderConsentRequests();
+  }finally{
+    btn.disabled = false;
+    btn.innerText = '🔄 刷新';
+  }
+}
+
+document.getElementById('btnRefreshConsent').onclick=loadConsentRequests;
+document.getElementById('btnConsentSearch').onclick=()=>{
+  consentSearchText = (document.getElementById('consentSearch').value || '').trim();
+  renderConsentRequests();
+};
+document.getElementById('btnConsentClear').onclick=()=>{
+  document.getElementById('consentSearch').value = '';
+  consentSearchText = '';
+  renderConsentRequests();
+};
+document.getElementById('consentSearch').addEventListener('keydown',(e)=>{
+  if(e.key === 'Enter'){
+    e.preventDefault();
+    document.getElementById('btnConsentSearch').click();
+  }
+});
+
+document.getElementById('btnConsentDecisionClose').onclick=()=>closeModal('modalConsentDecision');
+document.getElementById('btnConsentDecisionCancel').onclick=()=>closeModal('modalConsentDecision');
+document.getElementById('modalConsentDecision').addEventListener('click',(e)=>{
+  if(e.target.id === 'modalConsentDecision') closeModal('modalConsentDecision');
+});
+
+document.getElementById('btnConsentDecisionConfirm').onclick=async()=>{
+  if(!consentDecisionContext) return;
+  const decision = consentDecisionContext.decision;
+  const justification = (document.getElementById('consentDecisionJustification').value || '').trim();
+  if(decision === 'Deny' && !justification){
+    alert('拒绝时请填写原因');
+    return;
+  }
+  const btn = document.getElementById('btnConsentDecisionConfirm');
+  btn.disabled = true;
+  btn.innerText = decision === 'Deny' ? '正在拒绝...' : '正在批准...';
+  try{
+    const res = await fetch(adminPath + '/api/consent-requests/decision',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        globalId: consentDecisionContext.globalId,
+        appConsentRequestId: consentDecisionContext.appConsentRequestId,
+        decision,
+        justification
+      })
+    });
+    const data = await res.json().catch(()=>({}));
+    if(data.success){
+      alert(data.message || '审批成功');
+      closeModal('modalConsentDecision');
+      loadConsentRequests();
+    }else{
+      alert(data.message || '审批失败');
+    }
+  }catch(err){
+    alert('网络异常，请稍后重试');
+  }finally{
+    btn.disabled = false;
+    btn.innerText = decision === 'Deny' ? '确认拒绝' : '确认批准';
+  }
+};
+
+loadConsentRequests();
+</script>
+    `,
+  });
+}
+
 function renderInvitesPage(adminPath, globals) {
   return adminLayout({
     title: '邀请码管理',
@@ -1777,6 +2107,201 @@ async function fetchSubscribedSkus(global, fetcher) {
   return Array.isArray(data.value) ? data.value : [];
 }
 
+async function graphRequestJson(url, token, fetcher, options = {}) {
+  const headers = { Authorization: `Bearer ${token}`, ...(options.headers || {}) };
+  const resp = await fetcher(url, { ...options, headers });
+  const text = await resp.text().catch(() => '');
+  let data = {};
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { raw: text };
+    }
+  }
+  if (!resp.ok) {
+    const message = data?.error?.message || data?.raw || `Graph 请求失败（${resp.status}）`;
+    const err = new Error(message);
+    err.status = resp.status;
+    err.details = text.slice(0, 500);
+    throw err;
+  }
+  return data;
+}
+
+async function graphRequestCollection(url, token, fetcher, maxPages = 10) {
+  let nextUrl = url;
+  let pages = 0;
+  const items = [];
+  while (nextUrl && pages < maxPages) {
+    const data = await graphRequestJson(nextUrl, token, fetcher);
+    if (Array.isArray(data.value)) items.push(...data.value);
+    nextUrl = data['@odata.nextLink'] || '';
+    pages++;
+  }
+  return items;
+}
+
+function normalizeConsentDecision(decision) {
+  const value = (decision || '').toString().trim().toLowerCase();
+  if (value === 'approve' || value === 'approved') return 'Approve';
+  if (value === 'deny' || value === 'denied' || value === 'reject') return 'Deny';
+  return '';
+}
+
+function buildConsentErrorMessage(error, fallback = '操作失败') {
+  if (!error) return fallback;
+  if (error.status === 403) {
+    return `${fallback}：当前全局可能缺少 ConsentRequest.ReadWrite.All 权限，或该权限尚未完成管理员同意`;
+  }
+  if (error.status === 404) {
+    return `${fallback}：请求不存在，或已被其他管理员处理`;
+  }
+  if (error.status === 409) {
+    return `${fallback}：请求状态已变化，请刷新后重试`;
+  }
+  return error.message || fallback;
+}
+
+function formatPendingScope(scope) {
+  const parts = [
+    scope?.resourceAppDisplayName,
+    scope?.displayName,
+    scope?.value,
+  ].filter(Boolean);
+  return parts.join(' / ') || scope?.id || '';
+}
+
+async function listPendingConsentRequestsForGlobal(global, fetcher) {
+  const token = await getAccessTokenForGlobal(global, fetcher);
+  const filter = encodeURIComponent("userConsentRequests/any(u:u/status eq 'InProgress')");
+  const baseUrl = `https://graph.microsoft.com/v1.0/identityGovernance/appConsent/appConsentRequests?$filter=${filter}&$top=100`;
+  const appRequests = await graphRequestCollection(baseUrl, token, fetcher);
+
+  const items = await Promise.all(
+    appRequests.map(async (item) => {
+      const userFilter = encodeURIComponent("status eq 'InProgress'");
+      const userUrl = `https://graph.microsoft.com/v1.0/identityGovernance/appConsent/appConsentRequests/${item.id}/userConsentRequests?$filter=${userFilter}&$top=100`;
+      const userRequests = await graphRequestCollection(userUrl, token, fetcher);
+      if (!userRequests.length) return null;
+
+      const requestorSet = new Set();
+      const reasonSet = new Set();
+      const requestors = [];
+      const reasons = [];
+      let latestCreatedDateTime = '';
+
+      userRequests.forEach((request) => {
+        const user = request?.createdBy?.user || {};
+        const key = [user.id, user.userPrincipalName, user.displayName].filter(Boolean).join('|');
+        if (key && !requestorSet.has(key)) {
+          requestorSet.add(key);
+          requestors.push({
+            id: user.id || '',
+            displayName: user.displayName || '',
+            userPrincipalName: user.userPrincipalName || '',
+          });
+        }
+
+        const reason = (request?.reason || '').toString().trim();
+        if (reason && !reasonSet.has(reason)) {
+          reasonSet.add(reason);
+          reasons.push(reason);
+        }
+
+        const created = request?.createdDateTime || '';
+        if (created && (!latestCreatedDateTime || new Date(created) > new Date(latestCreatedDateTime))) {
+          latestCreatedDateTime = created;
+        }
+      });
+
+      const scopeSet = new Set();
+      const pendingScopes = (item.pendingScopes || [])
+        .map((scope) => formatPendingScope(scope))
+        .filter((scope) => {
+          if (!scope || scopeSet.has(scope)) return false;
+          scopeSet.add(scope);
+          return true;
+        });
+
+      return {
+        globalId: global.id,
+        globalLabel: global.label,
+        appConsentRequestId: item.id,
+        appId: item.appId || '',
+        appDisplayName: item.appDisplayName || '',
+        pendingScopes,
+        pendingCount: userRequests.length,
+        latestCreatedDateTime,
+        requestors,
+        reasons,
+      };
+    }),
+  );
+
+  return items.filter(Boolean);
+}
+
+async function applyConsentDecisionForGlobal(global, appConsentRequestId, decision, justification, fetcher) {
+  const normalizedDecision = normalizeConsentDecision(decision);
+  if (!normalizedDecision) throw new Error('无效的审批动作');
+
+  const token = await getAccessTokenForGlobal(global, fetcher);
+  const userFilter = encodeURIComponent("status eq 'InProgress'");
+  const userUrl = `https://graph.microsoft.com/v1.0/identityGovernance/appConsent/appConsentRequests/${appConsentRequestId}/userConsentRequests?$filter=${userFilter}&$top=100`;
+  const userRequests = await graphRequestCollection(userUrl, token, fetcher);
+  if (!userRequests.length) {
+    return { processed: 0, skipped: 0, failed: 0 };
+  }
+
+  const stageTasks = [];
+  let skipped = 0;
+  userRequests.forEach((request) => {
+    const stages = Array.isArray(request?.approval?.stages) ? request.approval.stages : [];
+    const activeStages = stages.filter((stage) => normalizeLower(stage?.status) === 'inprogress');
+    if (!activeStages.length) {
+      skipped++;
+      return;
+    }
+    activeStages.forEach((stage) => {
+      stageTasks.push({
+        userConsentRequestId: request.id,
+        approvalStageId: stage.id,
+      });
+    });
+  });
+
+  if (!stageTasks.length) {
+    return { processed: 0, skipped, failed: 0 };
+  }
+
+  const results = await Promise.allSettled(
+    stageTasks.map((task) =>
+      graphRequestJson(
+        `https://graph.microsoft.com/v1.0/identityGovernance/appConsent/appConsentRequests/${appConsentRequestId}/userConsentRequests/${task.userConsentRequestId}/approval/stages/${task.approvalStageId}`,
+        token,
+        fetcher,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            reviewResult: normalizedDecision,
+            justification: (justification || '').toString().trim() || undefined,
+          }),
+        },
+      ),
+    ),
+  );
+
+  const failed = results.filter((item) => item.status === 'rejected');
+  return {
+    processed: results.length - failed.length,
+    skipped,
+    failed: failed.length,
+    message: failed[0]?.reason ? buildConsentErrorMessage(failed[0].reason, '审批失败') : '',
+  };
+}
+
 function remainingFromSubscribedSku(sku) {
   const enabled = Number(sku?.prepaidUnits?.enabled ?? 0);
   const consumed = Number(sku?.consumedUnits ?? 0);
@@ -2052,6 +2577,10 @@ export default {
       if(!(await verifySession(env, request))) return redirect(`${adminPath}/login`);
       return htmlResponse(renderGlobalsPage(adminPath));
     }
+    if(url.pathname === `${adminPath}/enterprise-apps`){
+      if(!(await verifySession(env, request))) return redirect(`${adminPath}/login`);
+      return htmlResponse(renderEnterpriseAppsPage(adminPath));
+    }
     if(url.pathname === `${adminPath}/invites`){
       if(!(await verifySession(env, request))) return redirect(`${adminPath}/login`);
       return htmlResponse(renderInvitesPage(adminPath, cfg.globals||[]));
@@ -2153,6 +2682,66 @@ export default {
           return jsonResponse({success:true,map});
         }catch(e){
           return jsonResponse({success:false,message:e.message},400);
+        }
+      }
+
+      // admin consent requests for enterprise apps
+      if(url.pathname === `${adminPath}/api/consent-requests` && request.method==='GET'){
+        const globals = cfg.globals || [];
+        const settled = await Promise.allSettled(globals.map(g => listPendingConsentRequestsForGlobal(g, fetch)));
+        const items = [];
+        const errors = [];
+        settled.forEach((result, index) => {
+          const g = globals[index];
+          if(result.status === 'fulfilled'){
+            items.push(...result.value);
+          }else{
+            errors.push({
+              globalId: g?.id || '',
+              globalLabel: g?.label || '未命名全局',
+              message: buildConsentErrorMessage(result.reason, '读取管理员同意请求失败'),
+            });
+          }
+        });
+        items.sort((a, b) => new Date(b.latestCreatedDateTime || 0) - new Date(a.latestCreatedDateTime || 0));
+        return jsonResponse({success:true,items,errors});
+      }
+      if(url.pathname === `${adminPath}/api/consent-requests/decision` && request.method==='POST'){
+        const body = await request.json().catch(()=>({}));
+        const globalId = (body.globalId || '').toString().trim();
+        const appConsentRequestId = (body.appConsentRequestId || '').toString().trim();
+        const decision = normalizeConsentDecision(body.decision);
+        const justification = (body.justification || '').toString().trim();
+        if(!globalId || !appConsentRequestId){
+          return jsonResponse({success:false,message:'缺少全局或请求标识'},400);
+        }
+        if(!decision){
+          return jsonResponse({success:false,message:'无效的审批动作'},400);
+        }
+        if(decision === 'Deny' && !justification){
+          return jsonResponse({success:false,message:'拒绝时请填写原因'},400);
+        }
+
+        const g = (cfg.globals||[]).find(x=>x.id===globalId);
+        if(!g) return jsonResponse({success:false,message:'未找到对应全局'},404);
+
+        try{
+          const result = await applyConsentDecisionForGlobal(g, appConsentRequestId, decision, justification, fetch);
+          if(result.failed){
+            return jsonResponse({
+              success:false,
+              message:`已处理 ${result.processed} 条请求，但仍有 ${result.failed} 条失败。${result.message || '请刷新后重试'}`
+            },409);
+          }
+          if(result.processed === 0){
+            return jsonResponse({success:false,message:'没有可处理的待审批请求，可能已被其他管理员处理'},409);
+          }
+          return jsonResponse({
+            success:true,
+            message:`已${decision === 'Deny' ? '拒绝' : '批准'} ${result.processed} 条请求${result.skipped ? `，跳过 ${result.skipped} 条非活动审批阶段` : ''}`
+          });
+        }catch(e){
+          return jsonResponse({success:false,message:buildConsentErrorMessage(e, '审批失败')}, e.status || 400);
         }
       }
 
