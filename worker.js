@@ -1484,7 +1484,7 @@ function renderConsentRequests(){
       + '<button type="button" class="btn-danger btn-deny" data-global="'+esc(item.globalId)+'" data-id="'+esc(item.appConsentRequestId)+'">拒绝全部</button>'
       + '</div>';
     return '<tr>'
-      + '<td data-label="全局">'+esc(item.globalLabel || '-')</td>'
+      + '<td data-label="全局">'+esc(item.globalLabel || '-')+'</td>'
       + '<td data-label="应用">'+app+'</td>'
       + '<td data-label="待审批权限">'+scopes+'</td>'
       + '<td data-label="请求人">'+requestors+'</td>'
