@@ -862,7 +862,7 @@ function renderUsersPage(adminPath) {
     <div>
       <label class="inline"><input type="radio" name="pwdType" value="auto" checked> 自动生成高强度密码</label>
       <label class="inline"><input type="radio" name="pwdType" value="custom"> 自定义密码</label>
-      <input type="text" id="customPwd" style="display:none;margin-top:8px;" placeholder="输入新密码">
+      <input type="password" id="customPwd" style="display:none;margin-top:8px;" placeholder="输入新密码" autocomplete="new-password">
     </div>
     <div class="footer">
       <button class="btn-ghost" onclick="closeModal('modalPwd')">取消</button>
@@ -991,7 +991,14 @@ async function fetchUsers(){
 }
 
 document.getElementById('btnRefresh').onclick=fetchUsers;
-document.getElementById('btnPwd').onclick=()=>{ if(getSelected().length===0) return alert('请选择用户'); openModal('modalPwd'); };
+document.getElementById('btnPwd').onclick=()=>{
+  if(getSelected().length===0) return alert('请选择用户');
+  document.querySelector('input[name="pwdType"][value="auto"]').checked = true;
+  document.getElementById('customPwd').value = '';
+  document.getElementById('customPwd').style.display = 'none';
+  document.getElementById('pwdResult').innerText = '';
+  openModal('modalPwd');
+};
 document.getElementById('btnLic').onclick=async()=>{
   openModal('modalLic');
   document.getElementById('licContent').innerText='查询中...';
@@ -1033,16 +1040,51 @@ document.querySelectorAll('input[name="pwdType"]').forEach(r=>{
 });
 document.getElementById('confirmPwd').onclick=async()=>{
   const sel=getSelected(); if(!sel.length) return alert('请选择用户');
+  const btn = document.getElementById('confirmPwd');
+  const resultEl = document.getElementById('pwdResult');
   const type=document.querySelector('input[name="pwdType"]:checked').value;
   let pwd='';
   if(type==='custom'){ pwd=document.getElementById('customPwd').value; if(!pwd) return alert('请输入密码'); }
-  const result=[];
-  for(const s of sel){
-    const finalPwd = type==='auto' ? generatePass() : pwd;
-    await fetch(adminPath + '/api/users/'+s.g+'/'+s.id+'/password',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:finalPwd})});
-    result.push(s.id+' => '+finalPwd);
+  const successList=[];
+  const failedList=[];
+  btn.disabled = true;
+  btn.innerText = '处理中...';
+  resultEl.innerText = '正在重置密码...';
+  try{
+    for(const s of sel){
+      const finalPwd = type==='auto' ? generatePass() : pwd;
+      try{
+        const selectedUser = usersCache.find(u=>u.id===s.id && u._globalId===s.g);
+        const res = await fetch(adminPath + '/api/users/'+s.g+'/'+s.id+'/password',{
+          method:'PATCH',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({password:finalPwd})
+        });
+        const data = await res.json().catch(()=>({}));
+        const fallbackLabel = (selectedUser && (selectedUser.userPrincipalName || selectedUser.displayName)) || s.id;
+        const label = data.userPrincipalName || data.displayName || fallbackLabel;
+        if(!res.ok || !data.success){
+          failedList.push(label+' => 失败：'+(data.message || data.error || ('HTTP '+res.status)));
+          continue;
+        }
+        successList.push(label+' => '+finalPwd);
+      }catch(e){
+        failedList.push(s.id+' => 失败：'+(e.message || '请求失败'));
+      }
+    }
+    const lines = ['处理完成：成功 '+successList.length+' 个，失败 '+failedList.length+' 个'];
+    if(successList.length){
+      lines.push('', '成功：', successList.join('\\n'));
+    }
+    if(failedList.length){
+      lines.push('', '失败：', failedList.join('\\n'));
+    }
+    resultEl.innerText = lines.join('\\n');
+    if(successList.length) fetchUsers();
+  }finally{
+    btn.disabled = false;
+    btn.innerText = '确认';
   }
-  document.getElementById('pwdResult').innerText='完成：\\n'+result.join('\\n');
 };
 function generatePass(){
   const chars="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
@@ -2935,15 +2977,21 @@ export default {
         const userId = parts[parts.length-2];
         const gId = parts[parts.length-3];
         const body = await request.json().catch(()=>({}));
+        const password = (body.password || '').toString();
+        if(!password) return jsonResponse({success:false,message:'缺少新密码'},400);
         const g = (cfg.globals||[]).find(x=>x.id===gId);
         if(!g) return jsonResponse({error:'not found'},404);
-        const token = await getAccessTokenForGlobal(g, fetch);
-        await fetch(`https://graph.microsoft.com/v1.0/users/${userId}`,{
-          method:'PATCH',
-          headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
-          body:JSON.stringify({passwordProfile:{forceChangePasswordNextSignIn:false,password:body.password}})
-        });
-        return jsonResponse({success:true});
+        try{
+          const token = await getAccessTokenForGlobal(g, fetch);
+          await graphRequestJson(`https://graph.microsoft.com/v1.0/users/${userId}`, token, fetch, {
+            method:'PATCH',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({passwordProfile:{forceChangePasswordNextSignIn:false,password}})
+          });
+          return jsonResponse({success:true,userId});
+        }catch(e){
+          return jsonResponse({success:false,message:e.message || '重置密码失败',userId}, e.status || 500);
+        }
       }
 
       // licenses
