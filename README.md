@@ -175,3 +175,6 @@ Worker Settings → Bindings
 ## License
 
 MIT License
+
+## 友情链接
+![Linux.do](https://Linux.do)
