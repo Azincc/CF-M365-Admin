@@ -21,7 +21,7 @@ const DEFAULT_CONFIG = {
   invite: { enabled: false },
 };
 
-const GITHUB_LINK = 'https://github.com/zixiwangluo/CF-M365-Admin';
+const GITHUB_LINK = 'https://github.com/azincc/CF-M365-Admin';
 
 /* -------------------- Utility -------------------- */
 const enc = new TextEncoder();
@@ -159,82 +159,222 @@ function checkPasswordComplexity(pwd){
 /* -------------------- HTML Templates -------------------- */
 const baseStyles = `
     :root {
-        --primary: #4f46e5;
-        --primary-hover: #4338ca;
-        --bg-gradient: linear-gradient(-45deg, #ee7752, #e73c7e, #23a6d5, #23d5ab);
-        --glass-bg: rgba(255, 255, 255, 0.9);
-        --glass-border: rgba(255, 255, 255, 0.4);
-        --text-main: #1f2937;
-        --text-sub: #6b7280;
+        --primary: #0f766e;
+        --primary-hover: #115e59;
+        --primary-soft: rgba(15, 118, 110, 0.12);
+        --secondary: #172033;
+        --accent: #f59e0b;
+        --danger: #dc2626;
+        --danger-hover: #b91c1c;
+        --surface: rgba(255, 255, 255, 0.86);
+        --surface-solid: #ffffff;
+        --surface-muted: #f6f8fc;
+        --border: rgba(148, 163, 184, 0.22);
+        --border-strong: rgba(15, 23, 42, 0.1);
+        --text-main: #172033;
+        --text-sub: #667085;
+        --shadow-lg: 0 24px 64px rgba(15, 23, 42, 0.12);
+        --shadow-md: 0 14px 34px rgba(15, 23, 42, 0.08);
+        --shadow-sm: 0 6px 16px rgba(15, 23, 42, 0.06);
+        --radius-lg: 28px;
+        --radius-md: 20px;
+        --radius-sm: 16px;
     }
     * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
     body {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        background: var(--bg-gradient);
-        background-size: 400% 400%;
-        animation: gradient 15s ease infinite;
-        margin: 0; padding: 0;
+        margin: 0;
+        min-height: 100vh;
         color: var(--text-main);
+        font-family: "Segoe UI Variable Display", "Segoe UI Variable Text", "PingFang SC", "Microsoft YaHei", sans-serif;
+        background:
+          radial-gradient(circle at 14% 18%, rgba(15, 118, 110, 0.18), transparent 28%),
+          radial-gradient(circle at 86% 2%, rgba(245, 158, 11, 0.16), transparent 24%),
+          radial-gradient(circle at 100% 100%, rgba(37, 99, 235, 0.14), transparent 32%),
+          linear-gradient(135deg, #fff7ed 0%, #f5f9ff 44%, #effbf6 100%);
     }
-    @keyframes gradient { 0% {background-position:0% 50%} 50% {background-position:100% 50%} 100% {background-position:0% 50%} }
-    @keyframes fadeInUp { from {opacity:0; transform: translateY(20px);} to {opacity:1; transform: translateY(0);} }
-    a { color: var(--primary); text-decoration: none; }
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(18px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    a {
+      color: var(--primary);
+      text-decoration: none;
+      transition: color .18s ease;
+    }
+    a:hover { color: var(--primary-hover); }
+    code {
+      font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+      font-size: .92em;
+      background: rgba(15, 23, 42, 0.06);
+      padding: 2px 6px;
+      border-radius: 8px;
+    }
     .card {
-        background: var(--glass-bg);
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
-        padding: 32px;
-        border-radius: 18px;
-        border: 1px solid var(--glass-border);
-        box-shadow: 0 15px 35px rgba(0,0,0,0.1), 0 5px 15px rgba(0,0,0,0.05);
-        animation: fadeInUp 0.6s;
+      background: var(--surface);
+      backdrop-filter: blur(22px);
+      -webkit-backdrop-filter: blur(22px);
+      padding: 32px;
+      border-radius: var(--radius-lg);
+      border: 1px solid rgba(255, 255, 255, 0.68);
+      box-shadow: var(--shadow-lg);
+      animation: fadeInUp .45s ease both;
     }
     button {
-        padding: 12px 14px;
-        background: var(--primary);
-        color: #fff;
-        border: none;
-        border-radius: 12px;
-        font-weight: 600;
-        cursor: pointer;
-        touch-action: manipulation;
-        transition: all .2s;
-        box-shadow: 0 6px 14px rgba(79, 70, 229, 0.25);
+      appearance: none;
+      min-height: 46px;
+      padding: 12px 18px;
+      background: linear-gradient(135deg, #0f766e 0%, #2563eb 100%);
+      color: #fff;
+      border: none;
+      border-radius: 16px;
+      font-weight: 700;
+      letter-spacing: .01em;
+      cursor: pointer;
+      touch-action: manipulation;
+      transition: transform .18s ease, box-shadow .18s ease, opacity .18s ease, filter .18s ease;
+      box-shadow: 0 12px 26px rgba(37, 99, 235, 0.18);
     }
-    button:hover { background: var(--primary-hover); transform: translateY(-1px); }
-    button:disabled { background: #9ca3af; cursor: not-allowed; box-shadow: none; }
+    button:hover {
+      transform: translateY(-1px);
+      filter: saturate(1.05);
+      box-shadow: 0 16px 30px rgba(37, 99, 235, 0.22);
+    }
+    button:disabled {
+      background: #94a3b8;
+      cursor: not-allowed;
+      box-shadow: none;
+      transform: none;
+      filter: none;
+    }
     input, select, textarea {
-        width: 100%;
-        padding: 12px 14px;
-        border: 2px solid #e5e7eb;
-        border-radius: 12px;
-        background: rgba(255,255,255,0.7);
-        font-size: 14px;
-        transition: all .2s;
+      width: 100%;
+      min-height: 48px;
+      padding: 12px 14px;
+      border: 1px solid rgba(148, 163, 184, 0.24);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.82);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 2px rgba(15, 23, 42, 0.02);
+      font-size: 14px;
+      color: var(--text-main);
+      transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
     }
+    input::placeholder, textarea::placeholder { color: #94a3b8; }
     input:focus, select:focus, textarea:focus {
-        outline: none;
-        border-color: var(--primary);
-        box-shadow: 0 0 0 4px rgba(79,70,229,0.12);
-        background: #fff;
+      outline: none;
+      border-color: rgba(15, 118, 110, 0.56);
+      box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.12), 0 10px 22px rgba(15, 23, 42, 0.06);
+      background: #fff;
     }
-    .tag { padding: 4px 10px; border-radius: 12px; background: #e0e7ff; color: #4338ca; font-size: 12px; display:inline-block; margin: 2px 4px 2px 0;}
-    .table { width: 100%; border-collapse: separate; border-spacing: 0 8px; }
-    .table th { text-align: left; color: #6b7280; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; cursor: pointer; user-select: none; }
-    .table th .arrow { margin-left:6px; color:#9ca3af; }
+    .label {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 12px;
+      font-weight: 800;
+      color: #475569;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+    .row { margin-bottom: 16px; }
+    .message {
+      margin-top: 14px;
+      padding: 14px 16px;
+      border-radius: 16px;
+      font-size: 13px;
+      line-height: 1.6;
+      display: none;
+      border: 1px solid transparent;
+    }
+    .message.error {
+      background: #fff1f2;
+      color: #b42318;
+      border-color: #fecdd3;
+    }
+    .message.success {
+      background: #ecfdf3;
+      color: #027a48;
+      border-color: #abefc6;
+    }
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      margin: 2px 4px 2px 0;
+      border-radius: 999px;
+      background: rgba(37, 99, 235, 0.1);
+      color: #1d4ed8;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0 10px;
+    }
+    .table th {
+      padding: 0 14px 6px;
+      text-align: left;
+      color: #64748b;
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      cursor: pointer;
+      user-select: none;
+    }
+    .table th .arrow { margin-left: 6px; color: #94a3b8; }
     .table th.active .arrow { color: var(--primary); }
-    .table td { background: #fff; padding: 14px; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
-    .toolbar { display:flex; gap:10px; flex-wrap: wrap; margin-bottom: 14px; }
-    .pill { padding: 6px 10px; border: 1px solid #e5e7eb; border-radius: 999px; font-size: 12px; background:#fff; cursor:pointer; }
-    .pill.active { border-color: var(--primary); color: var(--primary); background: #eef2ff; }
-    .chip { padding:4px 8px; border-radius:10px; background:#eef2ff; color:#4338ca; font-size:12px; }
-    .input-compact {max-width:220px;}
-    .flex-row {display:flex; gap:10px; flex-wrap:wrap; align-items:center;}
+    .table td {
+      background: rgba(255, 255, 255, 0.96);
+      padding: 15px 14px;
+      border-radius: 16px;
+      box-shadow: var(--shadow-sm);
+      vertical-align: top;
+    }
+    .toolbar {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .pill {
+      padding: 8px 12px;
+      border: 1px solid rgba(148, 163, 184, 0.22);
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      background: rgba(255, 255, 255, 0.88);
+      color: var(--text-sub);
+      cursor: pointer;
+      transition: all .18s ease;
+    }
+    .pill:hover {
+      border-color: rgba(15, 118, 110, 0.24);
+      color: var(--primary);
+    }
+    .pill.active {
+      border-color: transparent;
+      color: #fff;
+      background: linear-gradient(135deg, #0f766e 0%, #2563eb 100%);
+      box-shadow: 0 10px 24px rgba(37, 99, 235, 0.18);
+    }
+    .chip {
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(37, 99, 235, 0.08);
+      color: #1d4ed8;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .input-compact { max-width: 220px; }
+    .flex-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 
     @media (max-width: 480px) {
-        body { padding: 12px; }
-        .card { padding: 20px; border-radius: 16px; }
-        button { width: 100%; }
+      body { padding: 12px; }
+      .card { padding: 22px; border-radius: 24px; }
+      button { width: 100%; }
     }
 `;
 
@@ -253,25 +393,37 @@ function renderRegisterPage({
   const disableGlobal = disableSelectIfSingle(globals);
   const selectedGlobal = globals.find(g => g.id === selectedGlobalId) || globals[0] || null;
   const disableSku = disableSelectIfSingle(skuDisplayList);
+  const safeAdminPath = escapeHtml(adminPath);
+  const selectedGlobalLabel = selectedGlobal ? escapeHtml(selectedGlobal.label) : '未配置租户';
+  const initialSkuName = skuDisplayList?.[0]?.name || '';
+  const initialSkuLabel = skuDisplayList?.[0]?.label || '暂无 SKU';
+  const safeInitialSkuName = escapeHtml(initialSkuName);
+  const safeInitialSkuLabel = escapeHtml(initialSkuLabel);
+  const skuSummary = skuDisplayList?.length ? `${skuDisplayList.length} 个可选订阅` : '暂无可选订阅';
+  const modeTitle = inviteMode ? '邀请码控制注册范围' : '保留开放式自助开通';
+  const modeDesc = inviteMode
+    ? '只有持有有效邀请码的成员才能创建账号，适合需要细粒度控制的场景。'
+    : '适合内部成员快速开通 Microsoft 365 账号和许可证。';
+  const registrationTitle = inviteMode ? 'Office 365 邀请码注册' : 'Office 365 自助开通';
+  const registrationDesc = inviteMode
+    ? '校验邀请码后自动创建账号并分配许可证。'
+    : '选择全局与订阅后，系统会自动完成账号创建与许可证分配。';
 
   const globalOptions = globals
     .map((g) => {
       const sel = selectedGlobal && g.id === selectedGlobal.id ? 'selected' : '';
-      return `<div class="option ${sel}" data-id="${g.id}">${g.label}</div>`;
+      return `<div class="option ${sel}" data-id="${escapeHtml(g.id)}">${escapeHtml(g.label)}</div>`;
     })
     .join('');
 
   const skuOptions = (list) =>
     (list || [])
-      .map((x) => `<div class="option" data-value="${x.name}">${x.label}</div>`)
+      .map((x) => `<div class="option" data-value="${escapeHtml(x.name)}">${escapeHtml(x.label)}</div>`)
       .join('');
 
   const siteKeyScript = turnstileSiteKey
     ? `<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>`
     : '';
-
-  const initialSkuName = skuDisplayList?.[0]?.name || '';
-  const initialSkuLabel = skuDisplayList?.[0]?.label || '暂无 SKU';
 
   return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -281,50 +433,92 @@ function renderRegisterPage({
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>${baseStyles}
 html,body{max-width:100%;overflow-x:hidden;}
-body{display:flex;justify-content:center;align-items:center;min-height:100vh;padding:20px;}
-.card{max-width:520px;width:100%;position:relative;}
-.header-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;gap:10px;flex-wrap:wrap;}
-h2{margin:0;font-weight:800;color:#111;font-size:20px;}
-.label{font-size:13px;font-weight:700;color:#6b7280;margin-bottom:6px;display:block;}
-.hint{margin-top:6px;font-size:12px;line-height:1.5;color:#6b7280;}
-.hint.error{color:#b91c1c;font-weight:800;}
+body.register-body{display:flex;justify-content:center;align-items:center;min-height:100vh;padding:28px;}
+.register-shell{width:min(1120px,100%);display:grid;grid-template-columns:minmax(0,1.12fr) minmax(380px,.88fr);gap:24px;align-items:stretch;}
+.register-hero{position:relative;overflow:hidden;padding:34px 30px;border-radius:32px;background:linear-gradient(145deg,rgba(15,23,42,.94),rgba(15,118,110,.9));color:#fff;box-shadow:0 28px 60px rgba(15,23,42,.24);animation:fadeInUp .45s ease both;}
+.register-hero::before,.register-hero::after{content:'';position:absolute;border-radius:999px;pointer-events:none;}
+.register-hero::before{width:260px;height:260px;top:-92px;right:-72px;background:rgba(245,158,11,.2);filter:blur(10px);}
+.register-hero::after{width:220px;height:220px;left:-72px;bottom:-96px;background:rgba(96,165,250,.14);filter:blur(8px);}
+.register-hero > *{position:relative;z-index:1;}
+.register-kicker{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.16);font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;}
+.register-title{margin:18px 0 12px;font-size:clamp(30px,4vw,48px);line-height:1.02;letter-spacing:-.03em;}
+.register-desc{margin:0;max-width:620px;font-size:15px;line-height:1.8;color:rgba(255,255,255,.78);}
+.register-highlights{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:26px;}
+.register-highlight{padding:16px;border-radius:22px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.14);backdrop-filter:blur(10px);}
+.register-highlight .mini-label{display:block;margin-bottom:8px;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.65);}
+.register-highlight strong{display:block;font-size:18px;line-height:1.2;}
+.register-highlight p{margin:8px 0 0;font-size:13px;line-height:1.7;color:rgba(255,255,255,.72);}
+.register-note-list{display:grid;gap:10px;margin-top:24px;}
+.register-note{display:flex;gap:12px;align-items:flex-start;padding:14px 16px;border-radius:20px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.1);}
+.register-note-index{flex:0 0 auto;width:28px;height:28px;border-radius:12px;display:grid;place-items:center;background:rgba(255,255,255,.16);font-weight:900;font-size:12px;}
+.register-note span:last-child{font-size:13px;line-height:1.7;color:rgba(255,255,255,.76);}
+.register-card{position:relative;display:flex;flex-direction:column;justify-content:space-between;}
+.form-top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:18px;}
+.form-heading{max-width:460px;}
+.form-heading h2{margin:10px 0 10px;font-size:28px;line-height:1.1;letter-spacing:-.02em;}
+.form-heading p{margin:0;color:var(--text-sub);font-size:14px;line-height:1.8;}
+.form-badge{display:inline-flex;align-items:center;padding:7px 12px;border-radius:999px;background:rgba(15,118,110,.1);color:var(--primary);font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;}
+.form-tags{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;}
+.form-tag{padding:9px 12px;border-radius:999px;background:rgba(15,23,42,.05);color:#334155;font-size:12px;font-weight:800;}
+.form-tag strong{color:#0f172a;}
+.input-group{margin-bottom:16px;}
+.hint{margin-top:8px;font-size:12px;line-height:1.6;color:var(--text-sub);}
+.hint.error{color:#b42318;font-weight:800;}
 .custom-select{position:relative;}
-.select-trigger{border:2px solid #e5e7eb;border-radius:12px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;background:rgba(255,255,255,0.7);cursor:pointer;gap:10px;}
-.select-trigger span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.select-trigger.disabled{cursor:not-allowed;opacity:0.6;}
-.select-arrow{flex:0 0 auto;width:10px;height:10px;border-right:2px solid #6b7280;border-bottom:2px solid #6b7280;transform:rotate(45deg) translateY(-2px);}
-.options-container{position:absolute;top:105%;left:0;right:0;background:white;border-radius:12px;box-shadow:0 10px 25px rgba(0,0,0,0.1);opacity:0;visibility:hidden;transform:translateY(-6px);transition:all .2s;z-index:50;overflow:hidden;max-height:48vh;overflow-y:auto;}
+.select-trigger{min-height:52px;border:1px solid rgba(148,163,184,.24);border-radius:18px;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;background:rgba(255,255,255,.86);cursor:pointer;gap:10px;box-shadow:inset 0 1px 0 rgba(255,255,255,.9),0 1px 2px rgba(15,23,42,.03);transition:border-color .18s ease,box-shadow .18s ease,transform .18s ease;}
+.select-trigger:hover{border-color:rgba(15,118,110,.32);box-shadow:0 8px 18px rgba(15,23,42,.05);}
+.select-trigger span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:700;color:#0f172a;}
+.select-trigger.disabled{cursor:not-allowed;opacity:.65;box-shadow:none;}
+.select-arrow{flex:0 0 auto;width:10px;height:10px;border-right:2px solid #64748b;border-bottom:2px solid #64748b;transform:rotate(45deg) translateY(-2px);}
+.options-container{position:absolute;top:calc(100% + 10px);left:0;right:0;background:rgba(255,255,255,.97);border-radius:18px;border:1px solid rgba(148,163,184,.18);box-shadow:0 20px 40px rgba(15,23,42,.12);opacity:0;visibility:hidden;transform:translateY(-6px);transition:all .18s ease;z-index:50;overflow:hidden;max-height:48vh;overflow-y:auto;}
 .options-container.open{opacity:1;visibility:visible;transform:translateY(0);}
-.option{padding:12px 14px;font-size:14px;cursor:pointer;word-break:break-word;}
-.option:hover{background:#f3f4f6;color:var(--primary);}
-.option.selected{background:#e0e7ff;color:var(--primary);font-weight:800;}
-.message{margin-top:14px;padding:12px;border-radius:10px;font-size:13px;display:none;}
-.error{background:#fee2e2;color:#991b1b;border:1px solid #fecaca;}
-.success{background:#dcfce7;color:#166534;border:1px solid #bbf7d0;}
-.cf-turnstile{display:flex;justify-content:center;margin:16px 0;}
-.footer{margin-top:16px;font-size:12px;color:#6b7280;display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap;text-align:center;}
-.icon-link{display:flex;gap:6px;align-items:center;color:#6b7280;}
+.option{padding:14px 16px;font-size:14px;cursor:pointer;word-break:break-word;transition:background .18s ease,color .18s ease;}
+.option:hover{background:rgba(15,118,110,.08);color:var(--primary);}
+.option.selected{background:rgba(37,99,235,.1);color:#1d4ed8;font-weight:800;}
+.field-tips{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:18px 0 8px;}
+.field-tip{padding:14px;border-radius:18px;background:var(--surface-muted);border:1px solid rgba(148,163,184,.14);}
+.field-tip .mini-label{display:block;margin-bottom:6px;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#64748b;}
+.field-tip strong{display:block;font-size:14px;line-height:1.5;}
+.field-tip p{margin:6px 0 0;font-size:12px;line-height:1.6;color:var(--text-sub);}
+.cf-turnstile{display:flex;justify-content:center;margin:18px 0;}
+#btn{width:100%;margin-top:12px;min-height:52px;font-size:15px;}
+.form-footer{margin-top:20px;padding-top:18px;border-top:1px solid rgba(148,163,184,.16);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--text-sub);}
+.footer-links{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+.icon-link{display:inline-flex;gap:6px;align-items:center;color:var(--text-sub);font-weight:700;}
+.footer-links .admin-link{padding:8px 12px;border-radius:999px;background:rgba(15,118,110,.08);color:var(--primary);}
 
 /* 威慑性弹窗 */
-.danger-modal{position:fixed;top:0;left:0;width:100%;height:100%;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);backdrop-filter:blur(4px);z-index:2000;padding:14px;}
-.danger-modal .dlg{width:92vw;max-width:520px;background:#fff;border-radius:18px;box-shadow:0 18px 50px rgba(0,0,0,0.35);overflow:hidden;}
-.danger-modal .bar{background:#b91c1c;color:#fff;padding:14px 16px;font-weight:900;display:flex;align-items:center;justify-content:space-between;}
-.danger-modal .bar .x{width:34px;height:34px;border-radius:12px;background:rgba(255,255,255,0.18);display:flex;align-items:center;justify-content:center;font-weight:900;cursor:pointer;}
-.danger-modal .content{padding:16px;line-height:1.7;color:#111827;}
+.danger-modal{position:fixed;top:0;left:0;width:100%;height:100%;display:none;align-items:center;justify-content:center;background:rgba(15,23,42,.56);backdrop-filter:blur(6px);z-index:2000;padding:14px;}
+.danger-modal .dlg{width:92vw;max-width:520px;background:#fff;border-radius:24px;box-shadow:0 28px 68px rgba(15,23,42,.35);overflow:hidden;}
+.danger-modal .bar{background:linear-gradient(135deg,#991b1b,#dc2626);color:#fff;padding:16px 18px;font-weight:900;display:flex;align-items:center;justify-content:space-between;}
+.danger-modal .bar .x{width:34px;height:34px;border-radius:12px;background:rgba(255,255,255,.16);display:flex;align-items:center;justify-content:center;font-weight:900;cursor:pointer;}
+.danger-modal .content{padding:18px;line-height:1.8;color:#111827;}
 .danger-modal .content strong{color:#b91c1c;}
-.danger-modal .actions{padding:0 16px 16px;display:flex;gap:10px;}
-.danger-modal .actions button{width:100%;background:#b91c1c;}
-.danger-modal .actions button:hover{background:#991b1b;transform:none;}
+.danger-modal .actions{padding:0 18px 18px;display:flex;gap:10px;}
+.danger-modal .actions button{width:100%;background:linear-gradient(135deg,#b91c1c,#ef4444);box-shadow:0 12px 28px rgba(220,38,38,.2);}
+.danger-modal .actions button:hover{transform:none;filter:none;background:linear-gradient(135deg,#991b1b,#dc2626);}
 
-@media (max-width: 480px) {
-  body{padding:12px;}
-  .card{padding:20px;border-radius:16px;}
-  button{width:100%;}
+@media (max-width: 980px){
+  body.register-body{padding:20px;}
+  .register-shell{grid-template-columns:1fr;}
+  .register-highlights{grid-template-columns:repeat(3,minmax(0,1fr));}
+}
+@media (max-width: 720px){
+  .register-hero{padding:26px 22px;}
+  .register-card{padding:24px;}
+  .register-highlights{grid-template-columns:1fr;}
+  .field-tips{grid-template-columns:1fr;}
+}
+@media (max-width: 480px){
+  body.register-body{padding:16px;}
+  .register-title{font-size:30px;}
+  .form-heading h2{font-size:24px;}
+  .form-tags{justify-content:flex-start;}
 }
 </style>
 ${siteKeyScript}
 </head>
-<body>
+<body class="register-body">
 
 <div class="danger-modal" id="banModal" role="dialog" aria-modal="true">
   <div class="dlg">
@@ -343,70 +537,137 @@ ${siteKeyScript}
   </div>
 </div>
 
-<div class="card">
-  <div class="header-row">
-    <h2>${inviteMode ? 'Office365 邀请码自助注册' : 'Office 365 自助开通'}</h2>
-    <a class="icon-link" href="${GITHUB_LINK}" target="_blank" title="View Source">${GITHUB_ICON}</a>
-  </div>
+<div class="register-shell">
+  <section class="register-hero">
+    <div class="register-kicker">Cloudflare Worker · Microsoft 365</div>
+    <h1 class="register-title">${modeTitle}</h1>
+    <p class="register-desc">${modeDesc}</p>
 
-  <form id="regForm">
-    <input type="hidden" name="globalId" id="globalId" value="${selectedGlobal ? selectedGlobal.id : ''}">
-    <input type="hidden" name="skuName" id="skuName" value="${initialSkuName}">
-
-    <div class="input-group">
-      <span class="label">选择全局</span>
-      <div class="custom-select">
-        <div class="select-trigger ${disableGlobal ? 'disabled' : ''}" id="globalTrigger">
-          <span>${selectedGlobal ? selectedGlobal.label : '无可用全局'}</span>
-          <div class="select-arrow"></div>
-        </div>
-        <div class="options-container" id="globalOptions">${globalOptions}</div>
+    <div class="register-highlights">
+      <div class="register-highlight">
+        <span class="mini-label">当前租户</span>
+        <strong>${selectedGlobalLabel}</strong>
+        <p>切换租户后会自动刷新页面，并展示该租户可分配的订阅与余量。</p>
       </div>
-      <div class="hint">切换全局会自动刷新页面以获取对应订阅余量。</div>
-    </div>
-
-    <div class="input-group">
-      <span class="label">选择订阅类型</span>
-      <div class="custom-select">
-        <div class="select-trigger ${disableSku ? 'disabled' : ''}" id="skuTrigger">
-          <span>${initialSkuLabel}</span>
-          <div class="select-arrow"></div>
-        </div>
-        <div class="options-container" id="skuOptions">${skuOptions(skuDisplayList)}</div>
+      <div class="register-highlight">
+        <span class="mini-label">订阅可见性</span>
+        <strong>${escapeHtml(skuSummary)}</strong>
+        <p>注册只暴露前台所需数据，不开放后台查询接口。</p>
+      </div>
+      <div class="register-highlight">
+        <span class="mini-label">保护规则</span>
+        <strong>${protectedPrefixes?.length || 0} 条敏感前缀</strong>
+        <p>命中高风险用户名时，系统会直接拦截注册并提示更换名称。</p>
       </div>
     </div>
 
-    <div class="input-group">
-      <span class="label">用户名 (仅字母和数字)</span>
-      <input type="text" id="username" required pattern="[a-zA-Z0-9]+" placeholder="例如: user123" autocomplete="off">
-      <div class="hint" id="userHint"></div>
+    <div class="register-note-list">
+      <div class="register-note">
+        <span class="register-note-index">01</span>
+        <span>用户名只允许字母和数字，适合直接映射为邮箱前缀，避免后续目录清理成本。</span>
+      </div>
+      <div class="register-note">
+        <span class="register-note-index">02</span>
+        <span>密码需要满足 4 类字符中的任意 3 类，页面会实时提示当前是否满足强度要求。</span>
+      </div>
+      <div class="register-note">
+        <span class="register-note-index">03</span>
+        <span>${inviteMode ? '邀请码会在注册时校验范围与次数，防止被重复滥用。' : '账号创建成功后可直接前往 Office.com 登录，无需再经过后台二次审批。'} </span>
+      </div>
     </div>
-    <div class="input-group">
-      <span class="label">密码（8位+，大写/小写/数字/符号：4选3）</span>
-      <input type="password" id="password" required placeholder="设置强密码" autocomplete="new-password">
-      <div class="hint" id="pwdHint">密码需满足：长度 ≥ 8，且大写/小写/数字/符号四类中满足任意三类。</div>
+  </section>
+
+  <section class="card register-card">
+    <div>
+      <div class="form-top">
+        <div class="form-heading">
+          <span class="form-badge">${inviteMode ? 'Invite Only' : 'Self Service'}</span>
+          <h2>${registrationTitle}</h2>
+          <p>${registrationDesc}</p>
+        </div>
+        <div class="form-tags">
+          <span class="form-tag">租户 <strong>${selectedGlobalLabel}</strong></span>
+          <span class="form-tag">${escapeHtml(skuSummary)}</span>
+          <span class="form-tag">${inviteMode ? '需要邀请码' : '无需邀请码'}</span>
+        </div>
+      </div>
+
+      <form id="regForm">
+        <input type="hidden" name="globalId" id="globalId" value="${selectedGlobal ? escapeHtml(selectedGlobal.id) : ''}">
+        <input type="hidden" name="skuName" id="skuName" value="${safeInitialSkuName}">
+
+        <div class="input-group">
+          <span class="label">选择全局</span>
+          <div class="custom-select">
+            <div class="select-trigger ${disableGlobal ? 'disabled' : ''}" id="globalTrigger">
+              <span>${selectedGlobalLabel}</span>
+              <div class="select-arrow"></div>
+            </div>
+            <div class="options-container" id="globalOptions">${globalOptions}</div>
+          </div>
+          <div class="hint">切换全局会自动刷新页面，以获取最新的订阅余量。</div>
+        </div>
+
+        <div class="input-group">
+          <span class="label">选择订阅类型</span>
+          <div class="custom-select">
+            <div class="select-trigger ${disableSku ? 'disabled' : ''}" id="skuTrigger">
+              <span>${safeInitialSkuLabel}</span>
+              <div class="select-arrow"></div>
+            </div>
+            <div class="options-container" id="skuOptions">${skuOptions(skuDisplayList)}</div>
+          </div>
+        </div>
+
+        <div class="input-group">
+          <span class="label">用户名 (仅字母和数字)</span>
+          <input type="text" id="username" required pattern="[a-zA-Z0-9]+" placeholder="例如：user123" autocomplete="off">
+          <div class="hint" id="userHint"></div>
+        </div>
+
+        <div class="input-group">
+          <span class="label">密码（8 位以上，4 选 3）</span>
+          <input type="password" id="password" required placeholder="设置强密码" autocomplete="new-password">
+          <div class="hint" id="pwdHint">密码需满足：长度 ≥ 8，且大写 / 小写 / 数字 / 符号四类中满足任意三类。</div>
+        </div>
+
+        ${
+          inviteMode
+            ? `<div class="input-group">
+                <span class="label">邀请码</span>
+                <input type="text" id="inviteCode" required placeholder="请输入有效邀请码">
+               </div>`
+            : ''
+        }
+
+        <div class="field-tips">
+          <div class="field-tip">
+            <span class="mini-label">命名建议</span>
+            <strong>优先使用短且稳定的用户名</strong>
+            <p>避免敏感前缀、特殊语义或与管理员账号混淆的命名。</p>
+          </div>
+          <div class="field-tip">
+            <span class="mini-label">开通结果</span>
+            <strong>创建完成后立即可登录</strong>
+            <p>页面会返回完整账号信息，并保留你刚刚设置的密码。</p>
+          </div>
+        </div>
+
+        ${turnstileSiteKey ? `<div class="cf-turnstile" data-sitekey="${turnstileSiteKey}"></div>` : ''}
+
+        <button type="submit" id="btn">创建并分配账号</button>
+        <div id="msg" class="message"></div>
+      </form>
     </div>
 
-    ${
-      inviteMode
-        ? `<div class="input-group">
-            <span class="label">邀请码</span>
-            <input type="text" id="inviteCode" required placeholder="请输入有效邀请码">
-           </div>`
-        : ''
-    }
-
-    ${turnstileSiteKey ? `<div class="cf-turnstile" data-sitekey="${turnstileSiteKey}"></div>` : ''}
-
-    <button type="submit" id="btn">立即创建账号</button>
-    <div id="msg" class="message"></div>
-  </form>
-
-  <div class="footer">
-    <span>Powered by Cloudflare Workers</span>
-    <a class="icon-link" href="${GITHUB_LINK}" target="_blank">${GITHUB_ICON} CF-M365-Admin</a>
-    <a class="icon-link" href="${adminPath}/login"> | ⭐后台管理⭐</a>
-  </div>
+    <div class="form-footer">
+      <span>Powered by Cloudflare Workers</span>
+      <div class="footer-links">
+        <a class="icon-link" href="${GITHUB_LINK}" target="_blank" rel="noopener noreferrer">${GITHUB_ICON} CF-M365-Admin</a>
+        <a class="icon-link admin-link" href="${safeAdminPath}/login">进入后台管理</a>
+      </div>
+    </div>
+  </section>
 </div>
 
 <script>
@@ -577,7 +838,7 @@ ${siteKeyScript}
       if(turnstileOn && typeof turnstile!=='undefined') turnstile.reset();
     }catch(err){
       msg.className='message error'; msg.style.display='block'; msg.innerText='网络异常，请稍后重试';
-    }finally{ btn.disabled=false; btn.innerText='立即创建账号'; validateForm(); }
+    }finally{ btn.disabled=false; btn.innerText='创建并分配账号'; validateForm(); }
   });
 
   // Expose for inline handler
@@ -586,55 +847,136 @@ ${siteKeyScript}
 </body></html>`;
 }
 
+const ADMIN_PAGE_META = {
+  dashboard: {
+    kicker: 'Operations Overview',
+    description: '集中查看租户活跃度、存储使用量和 Graph 报表可用性。',
+    focus: '汇总指标',
+    tip: '适合先判断哪些租户需要进一步排查或补授权。',
+  },
+  users: {
+    kicker: 'Directory Workspace',
+    description: '筛选、检索并批量维护已开通用户及其许可证分配状态。',
+    focus: '目录用户',
+    tip: '支持按全局、订阅和关键字快速收敛结果集。',
+  },
+  globals: {
+    kicker: 'Tenant Inventory',
+    description: '维护每个全局租户的连接参数、默认域和可用订阅映射。',
+    focus: '全局配置',
+    tip: '新增或修改租户后，前台注册页会立即感知变化。',
+  },
+  apps: {
+    kicker: 'Enterprise Apps',
+    description: '查看和审批企业应用管理员同意请求，统一追踪审批状态。',
+    focus: '同意审批',
+    tip: '待审批请求和已通过请求可在同一页面中筛选切换。',
+  },
+  invites: {
+    kicker: 'Access Control',
+    description: '生成、导出和回收邀请码，控制注册入口与可用范围。',
+    focus: '邀请码池',
+    tip: '筛选结果支持批量选中与移动端快捷操作。',
+  },
+  settings: {
+    kicker: 'System Config',
+    description: '调整后台入口、Turnstile 配置和受保护用户名策略。',
+    focus: '系统设置',
+    tip: '建议先维护保护前缀，再开放前台自助注册。',
+  },
+};
+
 /* Admin layout */
 function adminLayout({ title, content, adminPath, active }) {
+  const safeAdminPath = escapeHtml(adminPath);
+  const meta = ADMIN_PAGE_META[active] || {
+    kicker: 'Admin Workspace',
+    description: '统一管理租户、用户和系统配置。',
+    focus: title,
+    tip: '当前页面为后台管理模块。',
+  };
+
   return `<!DOCTYPE html><html lang="zh-CN"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${title}</title>
 <style>${baseStyles}
 html,body{max-width:100%;overflow-x:hidden;}
-body{background:#f4f5fb;padding:0;margin:0;}
-.nav{background:#fff;box-shadow:0 2px 10px rgba(0,0,0,0.05);padding:14px 22px;display:flex;align-items:center;justify-content:space-between;}
-.nav-left{display:flex;align-items:center;gap:14px;}
-.nav a{color:#4b5563;font-weight:600;}
-.tabs{display:flex;gap:10px;}
-.tab{padding:10px 14px;border-radius:10px;background:#f3f4f6;color:#374151;text-decoration:none;font-weight:600;}
-.tab.active{background:var(--primary);color:#fff;box-shadow:0 6px 14px rgba(79,70,229,0.18);}
-.container{max-width:1200px;margin:24px auto;padding:0 16px;}
-.section{background:#fff;border-radius:16px;box-shadow:0 12px 30px rgba(0,0,0,0.08);padding:24px;margin-bottom:18px;}
-.badge{padding:4px 8px;border-radius:8px;background:#eef2ff;color:#4338ca;font-weight:700;font-size:12px;}
+body.admin-body{padding:0;margin:0;background:linear-gradient(180deg,#f7f8fc 0%,#eef4f9 100%);}
+.admin-shell{min-height:100vh;}
+.nav{position:sticky;top:0;z-index:120;padding:18px 24px 16px;background:rgba(255,255,255,.82);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-bottom:1px solid rgba(148,163,184,.14);box-shadow:0 14px 32px rgba(15,23,42,.05);}
+.nav-top{max-width:1320px;margin:0 auto 16px;display:flex;justify-content:space-between;gap:16px;align-items:flex-start;}
+.brand-lockup{display:flex;align-items:flex-start;gap:14px;min-width:0;}
+.brand-mark{flex:0 0 auto;width:50px;height:50px;border-radius:18px;display:grid;place-items:center;background:linear-gradient(135deg,#0f766e 0%,#2563eb 100%);color:#fff;font-size:18px;font-weight:900;box-shadow:0 16px 28px rgba(37,99,235,.18);}
+.brand-copy{min-width:0;}
+.brand-title{font-size:18px;font-weight:900;line-height:1.15;color:#0f172a;}
+.brand-sub{margin-top:6px;color:#64748b;font-size:13px;line-height:1.6;max-width:680px;}
+.nav-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;}
+.mode-badge{display:inline-flex;align-items:center;gap:8px;padding:9px 12px;border-radius:999px;background:rgba(245,158,11,.14);color:#b45309;font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;}
+.nav-link{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:999px;background:rgba(241,245,249,.96);border:1px solid rgba(148,163,184,.16);color:#334155;font-weight:800;white-space:nowrap;}
+.nav-link:hover{color:var(--primary);border-color:rgba(15,118,110,.24);}
+.tabs{max-width:1320px;margin:0 auto;display:flex;gap:10px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none;}
+.tabs::-webkit-scrollbar{display:none;}
+.tab{display:inline-flex;align-items:center;justify-content:center;min-height:46px;padding:12px 16px;border-radius:16px;background:rgba(241,245,249,.84);border:1px solid transparent;color:#334155;text-decoration:none;font-weight:800;white-space:nowrap;box-shadow:inset 0 1px 0 rgba(255,255,255,.88);}
+.tab:hover{border-color:rgba(15,118,110,.18);color:var(--primary);}
+.tab.active{background:linear-gradient(135deg,#0f766e 0%,#2563eb 100%);color:#fff;box-shadow:0 14px 28px rgba(37,99,235,.18);}
+.container{max-width:1320px;margin:0 auto;padding:28px 18px 36px;}
+.page-hero{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;margin:0 0 20px;}
+.page-hero-main,.page-hero-side{border-radius:28px;border:1px solid rgba(255,255,255,.78);box-shadow:var(--shadow-md);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);}
+.page-hero-main{padding:28px;background:linear-gradient(135deg,rgba(15,118,110,.09),rgba(37,99,235,.08));}
+.page-hero-side{padding:16px;background:rgba(255,255,255,.78);}
+.eyebrow{display:inline-flex;align-items:center;padding:8px 12px;border-radius:999px;background:rgba(15,118,110,.1);color:var(--primary);font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;}
+.page-title{margin:14px 0 8px;font-size:clamp(28px,4vw,42px);line-height:1.04;letter-spacing:-.03em;color:#0f172a;}
+.page-description{max-width:760px;color:#64748b;font-size:14px;line-height:1.8;}
+.page-side-grid{display:grid;gap:12px;height:100%;}
+.hero-card{padding:16px;border-radius:22px;background:rgba(15,23,42,.03);border:1px solid rgba(148,163,184,.12);}
+.hero-card .mini-label{display:block;margin-bottom:8px;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#64748b;}
+.hero-card strong{display:block;font-size:20px;line-height:1.2;color:#0f172a;}
+.hero-card p{margin:8px 0 0;color:#64748b;font-size:13px;line-height:1.7;}
+.section{background:rgba(255,255,255,.84);border-radius:24px;border:1px solid rgba(255,255,255,.74);box-shadow:var(--shadow-md);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);padding:24px;margin-bottom:18px;}
+.badge{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;background:rgba(245,158,11,.14);color:#b45309;font-weight:800;font-size:12px;letter-spacing:.06em;text-transform:uppercase;}
 .table-wrap{overflow-x:auto;}
-input[type=checkbox]{width:18px;height:18px;}
-.modal{position:fixed;top:0;left:0;width:100%;height:100%;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.35);backdrop-filter:blur(3px);z-index:1000;}
-.modal .dialog{background:#fff;border-radius:16px;padding:20px;min-width:320px;max-width:92vw;max-height:85vh;overflow:auto;box-shadow:0 15px 40px rgba(0,0,0,0.2);animation:fadeInUp .25s;}
+input[type=checkbox]{width:18px;height:18px;accent-color:var(--primary);}
+.modal{position:fixed;top:0;left:0;width:100%;height:100%;display:none;align-items:center;justify-content:center;background:rgba(15,23,42,.38);backdrop-filter:blur(4px);z-index:1000;padding:16px;}
+.modal .dialog{background:rgba(255,255,255,.96);border-radius:24px;padding:22px;min-width:320px;max-width:92vw;max-height:85vh;overflow:auto;box-shadow:0 24px 54px rgba(15,23,42,.22);animation:fadeInUp .22s ease;}
 .modal .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
 .modal .footer{display:flex;justify-content:flex-end;gap:10px;margin-top:14px;}
-.modal-close{width:32px;height:32px;padding:0;border-radius:10px;background:#e5e7eb;color:#374151;display:flex;align-items:center;justify-content:center;font-weight:900;line-height:1;}
-.modal-close:hover{background:#d1d5db;transform:none;}
-.btn-ghost{background:#e5e7eb;color:#374151;}
-.btn-danger{background:#d13438;}
+.modal-close{width:34px;height:34px;padding:0;border-radius:12px;background:#e2e8f0;color:#334155;display:flex;align-items:center;justify-content:center;font-weight:900;line-height:1;box-shadow:none;}
+.modal-close:hover{background:#cbd5e1;transform:none;box-shadow:none;filter:none;}
+.btn-ghost{background:rgba(241,245,249,.96);color:#334155;border:1px solid rgba(148,163,184,.16);box-shadow:none;}
+.btn-ghost:hover{background:#e2e8f0;transform:none;box-shadow:none;filter:none;}
+.btn-danger{background:linear-gradient(135deg,#dc2626,#ef4444);box-shadow:0 12px 26px rgba(220,38,38,.18);}
+.btn-danger:hover{background:linear-gradient(135deg,#b91c1c,#dc2626);box-shadow:0 14px 30px rgba(220,38,38,.22);}
 label.inline{display:flex;align-items:center;gap:8px;margin:6px 0;}
 .pagination{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
 .page-input{width:90px;}
 .search-box{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
-.subtle{color:#6b7280;font-size:12px;line-height:1.6;}
-.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;}
-.stat-card{background:linear-gradient(135deg,#ffffff,#f8faff);border:1px solid #e5e7eb;border-radius:16px;padding:18px;box-shadow:0 8px 20px rgba(79,70,229,0.06);}
-.stat-card .kicker{font-size:12px;color:#6b7280;font-weight:700;text-transform:uppercase;letter-spacing:.08em;}
+.subtle{color:#64748b;font-size:12px;line-height:1.7;}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:18px;}
+.stat-card{background:linear-gradient(135deg,#ffffff,#f7fbff);border:1px solid rgba(148,163,184,.16);border-radius:22px;padding:18px;box-shadow:0 12px 24px rgba(15,23,42,.05);}
+.stat-card .kicker{font-size:12px;color:#64748b;font-weight:800;text-transform:uppercase;letter-spacing:.08em;}
 .stat-card .value{font-size:30px;font-weight:900;color:#111827;margin:8px 0 6px;line-height:1.1;}
-.stat-card .meta{font-size:12px;color:#6b7280;line-height:1.6;}
-.status-pill{display:inline-flex;align-items:center;padding:5px 10px;border-radius:999px;font-size:12px;font-weight:700;background:#ecfdf5;color:#166534;}
+.stat-card .meta{font-size:12px;color:#64748b;line-height:1.7;}
+.status-pill{display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;font-size:12px;font-weight:800;background:#ecfdf5;color:#166534;}
 .status-pill.warn{background:#fff7ed;color:#c2410c;}
-.status-pill.muted{background:#f3f4f6;color:#4b5563;}
-.empty-state{padding:24px;border:1px dashed #d1d5db;border-radius:16px;background:#f9fafb;color:#6b7280;text-align:center;}
+.status-pill.muted{background:#f3f4f6;color:#475569;}
+.empty-state{padding:24px;border:1px dashed rgba(148,163,184,.5);border-radius:18px;background:#f8fafc;color:#64748b;text-align:center;}
+
+@media (max-width: 980px){
+  .nav{padding:16px 16px 14px;}
+  .nav-top{flex-direction:column;align-items:flex-start;margin-bottom:14px;}
+  .nav-actions{justify-content:flex-start;}
+  .page-hero{grid-template-columns:1fr;}
+}
 
 /* -------- Responsive (mobile) -------- */
 @media (max-width: 720px){
-  .nav{flex-direction:column;align-items:flex-start;gap:10px;padding:12px 14px;}
-  .nav-left{flex-wrap:wrap;gap:10px;}
-  .tabs{width:100%;flex-wrap:wrap;gap:8px;}
-  .tab{flex:1 1 auto;text-align:center;padding:10px 12px;min-height:44px;display:flex;align-items:center;justify-content:center;}
-  .container{margin:16px auto;padding:0 12px;}
+  body.admin-body{padding:0;}
+  .brand-lockup{align-items:center;}
+  .brand-mark{width:44px;height:44px;border-radius:16px;}
+  .tabs{width:100%;padding-bottom:2px;}
+  .tab{min-height:44px;padding:10px 14px;}
+  .container{padding:18px 12px 26px;}
+  .page-hero-main,.page-hero-side{padding:20px;}
   .section{padding:16px;}
   .input-compact{max-width:100%;}
   .modal .dialog{min-width:unset;width:92vw;}
@@ -652,34 +994,67 @@ label.inline{display:flex;align-items:center;gap:8px;margin:6px 0;}
   .table-wrap{overflow-x:visible;}
   .table{border-spacing:0 12px;}
   .table thead{display:none;}
-  .table tr{display:block;background:#fff;border-radius:14px;box-shadow:0 1px 6px rgba(0,0,0,0.08);overflow:hidden;}
+  .table tr{display:block;background:rgba(255,255,255,.96);border-radius:18px;box-shadow:0 8px 22px rgba(15,23,42,.08);overflow:hidden;}
   .table td{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;width:100%;background:transparent;box-shadow:none;border-radius:0;padding:10px 14px;word-break:break-word;}
-  .table td:not(:last-child){border-bottom:1px solid #f3f4f6;}
-  .table td::before{content:attr(data-label);font-weight:800;color:#6b7280;font-size:12px;min-width:92px;}
+  .table td:not(:last-child){border-bottom:1px solid #eef2f7;}
+  .table td::before{content:attr(data-label);font-weight:800;color:#64748b;font-size:12px;min-width:92px;}
   .table td:first-child{justify-content:flex-start;}
   .table td:first-child::before{content:'';min-width:0;}
   .table td code{word-break:break-all;}
   .tag{white-space:normal;}
 }
 </style>
-</head><body>
-<div class="nav">
-  <div class="nav-left">
-    <span style="font-weight:800;font-size:16px;">⚡ Office 365 Admin</span>
-    <span class="badge">安全模式</span>
-    <a href="https://github.com/zixiwangluo/CF-M365-Admin" target="_blank" style="display:flex;align-items:center;gap:6px;">${GITHUB_ICON}<span>GitHub CF-M365-Admin</span></a>
+</head><body class="admin-body">
+<div class="admin-shell">
+  <div class="nav">
+    <div class="nav-top">
+      <div class="brand-lockup">
+        <div class="brand-mark">365</div>
+        <div class="brand-copy">
+          <div class="brand-title">Office 365 Admin</div>
+          <div class="brand-sub">单 Worker 管理界面，集中维护租户、用户、自助注册入口和邀请码策略。</div>
+        </div>
+      </div>
+      <div class="nav-actions">
+        <span class="mode-badge">安全模式</span>
+        <a class="nav-link" href="${GITHUB_LINK}" target="_blank" rel="noopener noreferrer">${GITHUB_ICON}<span>GitHub</span></a>
+        <a class="nav-link" href="/" target="_blank" rel="noopener noreferrer">打开前台页面</a>
+      </div>
+    </div>
+    <div class="tabs">
+      <a class="tab ${active==='dashboard'?'active':''}" href="${safeAdminPath}/dashboard">看板</a>
+      <a class="tab ${active==='users'?'active':''}" href="${safeAdminPath}/users">用户</a>
+      <a class="tab ${active==='globals'?'active':''}" href="${safeAdminPath}/globals">全局账户</a>
+      <a class="tab ${active==='apps'?'active':''}" href="${safeAdminPath}/enterprise-apps">企业应用</a>
+      <a class="tab ${active==='invites'?'active':''}" href="${safeAdminPath}/invites">邀请码</a>
+      <a class="tab ${active==='settings'?'active':''}" href="${safeAdminPath}/settings">设置</a>
+    </div>
   </div>
-  <div class="tabs">
-    <a class="tab ${active==='dashboard'?'active':''}" href="${adminPath}/dashboard">看板</a>
-    <a class="tab ${active==='users'?'active':''}" href="${adminPath}/users">用户</a>
-    <a class="tab ${active==='globals'?'active':''}" href="${adminPath}/globals">全局账户</a>
-    <a class="tab ${active==='apps'?'active':''}" href="${adminPath}/enterprise-apps">企业应用</a>
-    <a class="tab ${active==='invites'?'active':''}" href="${adminPath}/invites">邀请码</a>
-    <a class="tab ${active==='settings'?'active':''}" href="${adminPath}/settings">设置</a>
-  </div>
-</div>
-<div class="container">
+
+  <div class="container">
+    <div class="page-hero">
+      <div class="page-hero-main">
+        <span class="eyebrow">${meta.kicker}</span>
+        <h1 class="page-title">${title}</h1>
+        <div class="page-description">${meta.description}</div>
+      </div>
+      <div class="page-hero-side">
+        <div class="page-side-grid">
+          <div class="hero-card">
+            <span class="mini-label">当前模块</span>
+            <strong>${meta.focus}</strong>
+            <p>${meta.tip}</p>
+          </div>
+          <div class="hero-card">
+            <span class="mini-label">快速提示</span>
+            <strong>路径：${safeAdminPath}</strong>
+            <p>顶部导航保持常驻，可在后台模块之间快速切换，不必返回首页。</p>
+          </div>
+        </div>
+      </div>
+    </div>
 ${content}
+  </div>
 </div>
 </body></html>`;
 }
@@ -716,7 +1091,7 @@ h2{margin:0 0 12px 0;}
     <button type="submit" id="btn">保存并进入后台</button>
   </form>
   <div id="msg" class="message" style="display:none;"></div>
-  <div class="footer" style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">${GITHUB_ICON}<a href="https://github.com/zixiwangluo/CF-M365-Admin" target="_blank">CF-M365-Admin</a></div>
+  <div class="footer" style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">${GITHUB_ICON}<a href="${GITHUB_LINK}" target="_blank">CF-M365-Admin</a></div>
 </div>
 <script>
 document.getElementById('setupForm').addEventListener('submit', async (e)=>{
@@ -767,7 +1142,7 @@ body{display:flex;align-items:center;justify-content:center;min-height:100vh;pad
 <div class="card">
   <div class="header-row" style="margin-bottom:10px;">
     <h2>后台登录</h2>
-    <a href="https://github.com/zixiwangluo/CF-M365-Admin" class="icon-link" target="_blank">${GITHUB_ICON}</a>
+    <a href="${GITHUB_LINK}" class="icon-link" target="_blank">${GITHUB_ICON}</a>
   </div>
   <form id="loginForm">
     <div class="row">
@@ -2520,6 +2895,22 @@ function buildDashboardMetricError(error, fallback = '读取报表失败') {
   return error.message || fallback;
 }
 
+function buildPasswordResetErrorMessage(error, fallback = '重置密码失败') {
+  if (!error) return fallback;
+  const raw = (error.message || '').toString();
+  const lower = raw.toLowerCase();
+  if (error.status === 403 || lower.includes('insufficient privileges')) {
+    return `${fallback}：当前全局缺少重置密码所需权限。请为应用授予并完成管理员同意 User-PasswordProfile.ReadWrite.All，并为企业应用分配 User Administrator；若目标账号是管理员，通常还需要 Privileged Authentication Administrator 或更高权限。`;
+  }
+  if (error.status === 404) {
+    return `${fallback}：未找到目标用户，或当前全局无权访问该用户。`;
+  }
+  if (error.status === 400 && lower.includes('password')) {
+    return `${fallback}：Graph 拒绝了新密码，请检查密码复杂度、历史密码限制或租户密码策略。`;
+  }
+  return raw || fallback;
+}
+
 async function fetchGraphReportCsv(path, token, fetcher) {
   const resp = await fetcher(`https://graph.microsoft.com/v1.0${path}`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -3452,7 +3843,7 @@ export default {
           });
           return jsonResponse({success:true,userId});
         }catch(e){
-          return jsonResponse({success:false,message:e.message || '重置密码失败',userId}, e.status || 500);
+          return jsonResponse({success:false,message:buildPasswordResetErrorMessage(e),userId}, e.status || 500);
         }
       }
 
