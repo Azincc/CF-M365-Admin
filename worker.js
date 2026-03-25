@@ -617,6 +617,16 @@ label.inline{display:flex;align-items:center;gap:8px;margin:6px 0;}
 .pagination{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
 .page-input{width:90px;}
 .search-box{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+.subtle{color:#6b7280;font-size:12px;line-height:1.6;}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;}
+.stat-card{background:linear-gradient(135deg,#ffffff,#f8faff);border:1px solid #e5e7eb;border-radius:16px;padding:18px;box-shadow:0 8px 20px rgba(79,70,229,0.06);}
+.stat-card .kicker{font-size:12px;color:#6b7280;font-weight:700;text-transform:uppercase;letter-spacing:.08em;}
+.stat-card .value{font-size:30px;font-weight:900;color:#111827;margin:8px 0 6px;line-height:1.1;}
+.stat-card .meta{font-size:12px;color:#6b7280;line-height:1.6;}
+.status-pill{display:inline-flex;align-items:center;padding:5px 10px;border-radius:999px;font-size:12px;font-weight:700;background:#ecfdf5;color:#166534;}
+.status-pill.warn{background:#fff7ed;color:#c2410c;}
+.status-pill.muted{background:#f3f4f6;color:#4b5563;}
+.empty-state{padding:24px;border:1px dashed #d1d5db;border-radius:16px;background:#f9fafb;color:#6b7280;text-align:center;}
 
 /* -------- Responsive (mobile) -------- */
 @media (max-width: 720px){
@@ -634,6 +644,7 @@ label.inline{display:flex;align-items:center;gap:8px;margin:6px 0;}
   .search-box{width:100%;}
   .pagination{gap:6px;}
   .page-input{width:78px;}
+  .stat-card .value{font-size:24px;}
 }
 
 /* Responsive tables -> stack rows into cards */
@@ -659,6 +670,7 @@ label.inline{display:flex;align-items:center;gap:8px;margin:6px 0;}
     <a href="https://github.com/zixiwangluo/CF-M365-Admin" target="_blank" style="display:flex;align-items:center;gap:6px;">${GITHUB_ICON}<span>GitHub CF-M365-Admin</span></a>
   </div>
   <div class="tabs">
+    <a class="tab ${active==='dashboard'?'active':''}" href="${adminPath}/dashboard">看板</a>
     <a class="tab ${active==='users'?'active':''}" href="${adminPath}/users">用户</a>
     <a class="tab ${active==='globals'?'active':''}" href="${adminPath}/globals">全局账户</a>
     <a class="tab ${active==='apps'?'active':''}" href="${adminPath}/enterprise-apps">企业应用</a>
@@ -794,6 +806,181 @@ document.getElementById('loginForm').addEventListener('submit', async (e)=>{
 });
 </script>
 </body></html>`;
+}
+
+function renderDashboardPage(adminPath) {
+  return adminLayout({
+    title: '管理看板',
+    adminPath,
+    active: 'dashboard',
+    content: `
+<div class="section">
+  <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+    <div>
+      <div class="badge">Microsoft 365 Usage</div>
+      <h2 style="margin:10px 0 6px;">租户看板</h2>
+      <div class="subtle">显示最近 7 天活跃用户数，以及 SharePoint + OneDrive 已用存储量。</div>
+      <div class="subtle">需要在对应应用上授予并完成管理员同意 <code>Reports.Read.All</code>。</div>
+    </div>
+    <div class="toolbar" style="margin:0;">
+      <button id="btnDashRefresh">🔄 刷新看板</button>
+    </div>
+  </div>
+</div>
+
+<div class="stats-grid" id="dashboardStats">
+  <div class="stat-card"><div class="kicker">全局数</div><div class="value">-</div><div class="meta">加载中...</div></div>
+  <div class="stat-card"><div class="kicker">活跃用户数</div><div class="value">-</div><div class="meta">加载中...</div></div>
+  <div class="stat-card"><div class="kicker">已用存储量</div><div class="value">-</div><div class="meta">加载中...</div></div>
+</div>
+
+<div class="section">
+  <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+    <div>
+      <h3 style="margin:0;">全局明细</h3>
+      <div class="subtle" id="dashboardMeta">正在读取报表...</div>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>全局</th>
+          <th>活跃用户数</th>
+          <th>已用存储量</th>
+          <th>SharePoint</th>
+          <th>OneDrive</th>
+          <th>状态</th>
+        </tr>
+      </thead>
+      <tbody id="dashboardBody">
+        <tr><td colspan="6" style="text-align:center;">加载中...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const adminPath = '${adminPath}';
+
+function esc(v){
+  return (v ?? '').toString()
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#39;');
+}
+
+function formatCount(v){
+  const n = Number(v);
+  return Number.isFinite(n) ? n.toLocaleString('zh-CN') : '--';
+}
+
+function formatBytes(v){
+  const n = Number(v);
+  if(!Number.isFinite(n) || n < 0) return '--';
+  if(n === 0) return '0 B';
+  const units = ['B','KB','MB','GB','TB','PB'];
+  let idx = 0;
+  let val = n;
+  while(val >= 1024 && idx < units.length - 1){
+    val /= 1024;
+    idx++;
+  }
+  const fixed = val >= 100 || idx === 0 ? 0 : val >= 10 ? 1 : 2;
+  return val.toFixed(fixed) + ' ' + units[idx];
+}
+
+function renderSummary(summary){
+  const wrap = document.getElementById('dashboardStats');
+  wrap.innerHTML = [
+    '<div class="stat-card">'
+      + '<div class="kicker">全局数</div>'
+      + '<div class="value">' + formatCount(summary.globalsTotal) + '</div>'
+      + '<div class="meta">已配置并参与看板统计的租户数量</div>'
+    + '</div>',
+    '<div class="stat-card">'
+      + '<div class="kicker">活跃用户数</div>'
+      + '<div class="value">' + formatCount(summary.activeUsers) + '</div>'
+      + '<div class="meta">最近 7 天，已成功读取 ' + formatCount(summary.activeUsersReady) + ' / ' + formatCount(summary.globalsTotal) + ' 个全局</div>'
+    + '</div>',
+    '<div class="stat-card">'
+      + '<div class="kicker">已用存储量</div>'
+      + '<div class="value">' + formatBytes(summary.storageBytes) + '</div>'
+      + '<div class="meta">SharePoint ' + formatBytes(summary.sharePointBytes) + ' + OneDrive ' + formatBytes(summary.oneDriveBytes) + '</div>'
+    + '</div>'
+  ].join('');
+}
+
+function renderRows(items){
+  const body = document.getElementById('dashboardBody');
+  if(!items.length){
+    body.innerHTML = '<tr><td colspan="6"><div class="empty-state">当前还没有配置任何全局租户。</div></td></tr>';
+    return;
+  }
+  body.innerHTML = items.map(item=>{
+    const activeText = item.activeUsers == null
+      ? '<span style="color:#9ca3af;">--</span><div class="subtle">' + esc(item.activeUsersError || '暂无数据') + '</div>'
+      : '<strong>' + formatCount(item.activeUsers) + '</strong><div class="subtle">报表日期：' + esc(item.activeUsersReportDate || '-') + '</div>';
+    const storageText = item.totalStorageBytes == null
+      ? '<span style="color:#9ca3af;">--</span><div class="subtle">' + esc(item.storageError || '暂无数据') + '</div>'
+      : '<strong>' + formatBytes(item.totalStorageBytes) + '</strong><div class="subtle">报表日期：' + esc(item.storageReportDate || '-') + '</div>';
+    let statusClass = 'status-pill';
+    let statusText = '正常';
+    if(item.activeUsers == null && item.totalStorageBytes == null){
+      statusClass = 'status-pill warn';
+      statusText = '报表不可用';
+    }else if(item.activeUsers == null || item.totalStorageBytes == null){
+      statusClass = 'status-pill muted';
+      statusText = '部分可用';
+    }
+    return '<tr>'
+      + '<td data-label="全局"><strong>' + esc(item.label) + '</strong><div class="subtle">' + esc(item.reportRefreshDate || '') + '</div></td>'
+      + '<td data-label="活跃用户数">' + activeText + '</td>'
+      + '<td data-label="已用存储量">' + storageText + '</td>'
+      + '<td data-label="SharePoint">' + (item.sharePointBytes == null ? '<span style="color:#9ca3af;">--</span>' : formatBytes(item.sharePointBytes)) + '</td>'
+      + '<td data-label="OneDrive">' + (item.oneDriveBytes == null ? '<span style="color:#9ca3af;">--</span>' : formatBytes(item.oneDriveBytes)) + '</td>'
+      + '<td data-label="状态"><span class="' + statusClass + '">' + statusText + '</span></td>'
+    + '</tr>';
+  }).join('');
+}
+
+async function loadDashboard(){
+  const btn = document.getElementById('btnDashRefresh');
+  btn.disabled = true;
+  btn.innerText = '刷新中...';
+  document.getElementById('dashboardMeta').innerText = '正在读取 Graph 报表...';
+  try{
+    const res = await fetch(adminPath + '/api/dashboard');
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok || !data.success){
+      document.getElementById('dashboardMeta').innerText = data.message || '看板加载失败';
+      document.getElementById('dashboardBody').innerHTML = '<tr><td colspan="6"><div class="empty-state">' + esc(data.message || '看板加载失败') + '</div></td></tr>';
+      return;
+    }
+    renderSummary(data.summary || {});
+    renderRows(data.items || []);
+    const metaParts = [];
+    metaParts.push('统计周期：最近 7 天');
+    if(data.summary){
+      metaParts.push('活跃用户已读取 ' + formatCount(data.summary.activeUsersReady) + ' / ' + formatCount(data.summary.globalsTotal) + ' 个全局');
+      metaParts.push('存储已读取 ' + formatCount(data.summary.storageReady) + ' / ' + formatCount(data.summary.globalsTotal) + ' 个全局');
+    }
+    document.getElementById('dashboardMeta').innerText = metaParts.join(' · ');
+  }catch(e){
+    document.getElementById('dashboardMeta').innerText = e.message || '看板加载失败';
+    document.getElementById('dashboardBody').innerHTML = '<tr><td colspan="6"><div class="empty-state">' + esc(e.message || '看板加载失败') + '</div></td></tr>';
+  }finally{
+    btn.disabled = false;
+    btn.innerText = '🔄 刷新看板';
+  }
+}
+
+document.getElementById('btnDashRefresh').onclick = loadDashboard;
+loadDashboard();
+</script>`
+  });
 }
 
 /* Admin pages */
@@ -2222,6 +2409,220 @@ async function graphRequestCollection(url, token, fetcher, maxPages = 10) {
   return items;
 }
 
+function parseMetricNumber(value) {
+  const raw = (value ?? '').toString().replace(/,/g, '').trim();
+  if (!raw) return null;
+  const num = Number(raw);
+  return Number.isFinite(num) ? num : null;
+}
+
+function parseCsvLine(line) {
+  const values = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (ch === ',' && !inQuotes) {
+      values.push(current);
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+  values.push(current);
+  return values;
+}
+
+function parseCsvTable(text) {
+  const normalized = (text || '').replace(/^\uFEFF/, '').trim();
+  if (!normalized) return [];
+  const lines = normalized.split(/\r?\n/).filter((line) => line.trim() !== '');
+  if (lines.length < 2) return [];
+  const headers = parseCsvLine(lines.shift());
+  return lines.map((line) => {
+    const cols = parseCsvLine(line);
+    const row = {};
+    headers.forEach((header, idx) => {
+      row[header] = cols[idx] ?? '';
+    });
+    return row;
+  });
+}
+
+function getLatestReportRows(rows) {
+  const candidates = (rows || [])
+    .map((row) => {
+      const reportDate = (row['Report Date'] || '').toString().trim();
+      return { row, reportDate, ts: Date.parse(reportDate) };
+    })
+    .filter((item) => item.reportDate && Number.isFinite(item.ts));
+  if (!candidates.length) return [];
+  let latest = candidates[0];
+  for (const item of candidates) {
+    if (item.ts > latest.ts) latest = item;
+  }
+  return candidates.filter((item) => item.reportDate === latest.reportDate).map((item) => item.row);
+}
+
+function getReportRefreshDate(rows) {
+  const latestRows = getLatestReportRows(rows);
+  return latestRows[0]?.['Report Refresh Date'] || '';
+}
+
+function getSingleValueSnapshot(rows, fieldName) {
+  const latestRows = getLatestReportRows(rows);
+  if (!latestRows.length) return { value: null, reportDate: '', refreshDate: '' };
+  const row = latestRows[0];
+  return {
+    value: parseMetricNumber(row[fieldName]),
+    reportDate: row['Report Date'] || '',
+    refreshDate: row['Report Refresh Date'] || '',
+  };
+}
+
+function getSummedValueSnapshot(rows, fieldName) {
+  const latestRows = getLatestReportRows(rows);
+  if (!latestRows.length) return { value: null, reportDate: '', refreshDate: '' };
+  const values = latestRows
+    .map((row) => parseMetricNumber(row[fieldName]))
+    .filter((value) => value !== null);
+  if (!values.length) {
+    return {
+      value: null,
+      reportDate: latestRows[0]?.['Report Date'] || '',
+      refreshDate: latestRows[0]?.['Report Refresh Date'] || '',
+    };
+  }
+  return {
+    value: values.reduce((sum, value) => sum + value, 0),
+    reportDate: latestRows[0]?.['Report Date'] || '',
+    refreshDate: latestRows[0]?.['Report Refresh Date'] || '',
+  };
+}
+
+function buildDashboardMetricError(error, fallback = '读取报表失败') {
+  if (!error) return fallback;
+  if (error.status === 403) {
+    return `${fallback}：缺少 Reports.Read.All 或尚未完成管理员同意`;
+  }
+  if (error.status === 404) {
+    return `${fallback}：当前租户或云环境不支持该报表`;
+  }
+  return error.message || fallback;
+}
+
+async function fetchGraphReportCsv(path, token, fetcher) {
+  const resp = await fetcher(`https://graph.microsoft.com/v1.0${path}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    redirect: 'manual',
+  });
+
+  if (resp.status === 302) {
+    const location = resp.headers.get('Location') || resp.headers.get('location');
+    if (!location) {
+      const err = new Error('报表下载地址缺失');
+      err.status = 502;
+      throw err;
+    }
+    const downloadResp = await fetcher(location);
+    if (!downloadResp.ok) {
+      const text = await downloadResp.text().catch(() => '');
+      const err = new Error(text || `报表下载失败（${downloadResp.status}）`);
+      err.status = downloadResp.status;
+      err.details = text.slice(0, 500);
+      throw err;
+    }
+    return await downloadResp.text();
+  }
+
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => '');
+    let message = `报表请求失败（${resp.status}）`;
+    if (text) {
+      try {
+        const data = JSON.parse(text);
+        message = data?.error?.message || text;
+      } catch {
+        message = text;
+      }
+    }
+    const err = new Error(message);
+    err.status = resp.status;
+    err.details = text.slice(0, 500);
+    throw err;
+  }
+
+  return await resp.text();
+}
+
+async function getDashboardMetricsForGlobal(global, fetcher) {
+  const token = await getAccessTokenForGlobal(global, fetcher);
+  const result = {
+    globalId: global.id,
+    label: global.label || '未命名全局',
+    activeUsers: null,
+    activeUsersReportDate: '',
+    activeUsersError: '',
+    sharePointBytes: null,
+    oneDriveBytes: null,
+    totalStorageBytes: null,
+    storageReportDate: '',
+    storageError: '',
+    reportRefreshDate: '',
+  };
+
+  const [activeReport, sharePointReport, oneDriveReport] = await Promise.allSettled([
+    fetchGraphReportCsv('/reports/getOffice365ActiveUserCounts(period=\'D7\')', token, fetcher),
+    fetchGraphReportCsv('/reports/getSharePointSiteUsageStorage(period=\'D7\')', token, fetcher),
+    fetchGraphReportCsv('/reports/getOneDriveUsageStorage(period=\'D7\')', token, fetcher),
+  ]);
+
+  if (activeReport.status === 'fulfilled') {
+    const snapshot = getSingleValueSnapshot(parseCsvTable(activeReport.value), 'Office 365');
+    result.activeUsers = snapshot.value;
+    result.activeUsersReportDate = snapshot.reportDate;
+    result.reportRefreshDate = snapshot.refreshDate || result.reportRefreshDate;
+  } else {
+    result.activeUsersError = buildDashboardMetricError(activeReport.reason, '活跃用户报表不可用');
+  }
+
+  const storageErrors = [];
+  if (sharePointReport.status === 'fulfilled') {
+    const snapshot = getSummedValueSnapshot(parseCsvTable(sharePointReport.value), 'Storage Used (Byte)');
+    result.sharePointBytes = snapshot.value;
+    result.storageReportDate = snapshot.reportDate || result.storageReportDate;
+    result.reportRefreshDate = snapshot.refreshDate || result.reportRefreshDate;
+  } else {
+    storageErrors.push(buildDashboardMetricError(sharePointReport.reason, 'SharePoint 存储报表不可用'));
+  }
+
+  if (oneDriveReport.status === 'fulfilled') {
+    const snapshot = getSummedValueSnapshot(parseCsvTable(oneDriveReport.value), 'Storage Used (Byte)');
+    result.oneDriveBytes = snapshot.value;
+    result.storageReportDate = snapshot.reportDate || result.storageReportDate;
+    result.reportRefreshDate = snapshot.refreshDate || result.reportRefreshDate;
+  } else {
+    storageErrors.push(buildDashboardMetricError(oneDriveReport.reason, 'OneDrive 存储报表不可用'));
+  }
+
+  if (result.sharePointBytes !== null || result.oneDriveBytes !== null) {
+    result.totalStorageBytes = (result.sharePointBytes || 0) + (result.oneDriveBytes || 0);
+  } else if (storageErrors.length) {
+    result.storageError = storageErrors.join('；');
+  }
+
+  return result;
+}
+
 function normalizeConsentDecision(decision) {
   const value = (decision || '').toString().trim().toLowerCase();
   if (value === 'approve' || value === 'approved') return 'Approve';
@@ -2703,6 +3104,14 @@ export default {
     }
 
     /* ---------- Admin HTML Pages ---------- */
+    if(url.pathname === adminPath){
+      if(!(await verifySession(env, request))) return redirect(`${adminPath}/login`);
+      return redirect(`${adminPath}/dashboard`);
+    }
+    if(url.pathname === `${adminPath}/dashboard`){
+      if(!(await verifySession(env, request))) return redirect(`${adminPath}/login`);
+      return htmlResponse(renderDashboardPage(adminPath));
+    }
     if(url.pathname === `${adminPath}/users`){
       if(!(await verifySession(env, request))) return redirect(`${adminPath}/login`);
       return htmlResponse(renderUsersPage(adminPath));
@@ -2727,6 +3136,59 @@ export default {
     /* ---------- Admin APIs (auth required) ---------- */
     if(url.pathname.startsWith(`${adminPath}/api/`)){
       if(!(await verifySession(env, request))) return jsonResponse({error:'unauthorized'},401);
+
+      if(url.pathname === `${adminPath}/api/dashboard` && request.method==='GET'){
+        const globals = cfg.globals || [];
+        const settled = await Promise.allSettled(globals.map((g) => getDashboardMetricsForGlobal(g, fetch)));
+        const items = settled.map((item, index) => {
+          if (item.status === 'fulfilled') return item.value;
+          const g = globals[index] || {};
+          const message = buildDashboardMetricError(item.reason, '读取看板失败');
+          return {
+            globalId: g.id || '',
+            label: g.label || '未命名全局',
+            activeUsers: null,
+            activeUsersReportDate: '',
+            activeUsersError: message,
+            sharePointBytes: null,
+            oneDriveBytes: null,
+            totalStorageBytes: null,
+            storageReportDate: '',
+            storageError: message,
+            reportRefreshDate: '',
+          };
+        });
+
+        const summary = items.reduce((acc, item) => {
+          acc.globalsTotal++;
+          if (item.activeUsers !== null) {
+            acc.activeUsers += item.activeUsers;
+            acc.activeUsersReady++;
+          }
+          if (item.totalStorageBytes !== null) {
+            acc.storageBytes += item.totalStorageBytes;
+            acc.storageReady++;
+          }
+          if (item.sharePointBytes !== null) acc.sharePointBytes += item.sharePointBytes;
+          if (item.oneDriveBytes !== null) acc.oneDriveBytes += item.oneDriveBytes;
+          return acc;
+        }, {
+          globalsTotal: 0,
+          activeUsers: 0,
+          activeUsersReady: 0,
+          storageBytes: 0,
+          storageReady: 0,
+          sharePointBytes: 0,
+          oneDriveBytes: 0,
+        });
+
+        return jsonResponse({
+          success: true,
+          period: 'D7',
+          summary,
+          items,
+        });
+      }
 
       // fetch SKU list by credentials (without saving global) - admin only
       if(url.pathname === `${adminPath}/api/fetch_skus` && request.method==='POST'){
