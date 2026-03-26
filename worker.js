@@ -3029,6 +3029,28 @@ function normalizeConsentDecision(decision) {
   return '';
 }
 
+function isConsentReviewApproved(reviewResult) {
+  const value = normalizeLower(reviewResult);
+  return value === 'approve' || value === 'approved';
+}
+
+function isConsentReviewDenied(reviewResult) {
+  const value = normalizeLower(reviewResult);
+  return value === 'deny' || value === 'denied';
+}
+
+function isConsentStageActionable(stage) {
+  if (!stage?.id) return false;
+  if (isConsentReviewApproved(stage?.reviewResult) || isConsentReviewDenied(stage?.reviewResult)) return false;
+  const status = normalizeLower(stage?.status);
+  if (!status) return true;
+  return status !== 'completed' && status !== 'expired';
+}
+
+function getConsentRequestStages(request) {
+  return Array.isArray(request?.approval?.stages) ? request.approval.stages : [];
+}
+
 function buildConsentErrorMessage(error, fallback = '操作失败') {
   if (!error) return fallback;
   if (error.status === 403) {
@@ -3092,9 +3114,9 @@ function extractApprovedStageInfo(userRequests) {
   let latestReviewedDateTime = '';
 
   userRequests.forEach((request) => {
-    const stages = Array.isArray(request?.approval?.stages) ? request.approval.stages : [];
+    const stages = getConsentRequestStages(request);
     stages.forEach((stage) => {
-      if (normalizeLower(stage?.reviewResult) !== 'approve') return;
+      if (!isConsentReviewApproved(stage?.reviewResult)) return;
       const note = (stage?.justification || '').toString().trim();
       if (note && !noteSet.has(note)) {
         noteSet.add(note);
@@ -3159,11 +3181,10 @@ async function listConsentRequestsForGlobal(global, fetcher) {
         pendingScopes,
       };
 
-      const openRequests = userRequests.filter((request) => normalizeLower(request?.status) === 'inprogress');
+      const openRequests = userRequests.filter((request) => getConsentRequestStages(request).some(isConsentStageActionable));
       const approvedRequests = userRequests.filter((request) => {
         if (normalizeLower(request?.status) !== 'completed') return false;
-        const stages = Array.isArray(request?.approval?.stages) ? request.approval.stages : [];
-        return stages.some((stage) => normalizeLower(stage?.reviewResult) === 'approve');
+        return getConsentRequestStages(request).some((stage) => isConsentReviewApproved(stage?.reviewResult));
       });
 
       return [
@@ -3181,8 +3202,7 @@ async function applyConsentDecisionForGlobal(global, appConsentRequestId, decisi
   if (!normalizedDecision) throw new Error('无效的审批动作');
 
   const token = await getAccessTokenForGlobal(global, fetcher);
-  const userFilter = encodeURIComponent("status eq 'InProgress'");
-  const userUrl = `https://graph.microsoft.com/v1.0/identityGovernance/appConsent/appConsentRequests/${appConsentRequestId}/userConsentRequests?$filter=${userFilter}&$top=100`;
+  const userUrl = `https://graph.microsoft.com/v1.0/identityGovernance/appConsent/appConsentRequests/${appConsentRequestId}/userConsentRequests?$top=100`;
   const userRequests = await graphRequestCollection(userUrl, token, fetcher);
   if (!userRequests.length) {
     return { processed: 0, skipped: 0, failed: 0 };
@@ -3191,8 +3211,7 @@ async function applyConsentDecisionForGlobal(global, appConsentRequestId, decisi
   const stageTasks = [];
   let skipped = 0;
   userRequests.forEach((request) => {
-    const stages = Array.isArray(request?.approval?.stages) ? request.approval.stages : [];
-    const activeStages = stages.filter((stage) => normalizeLower(stage?.status) === 'inprogress');
+    const activeStages = getConsentRequestStages(request).filter(isConsentStageActionable);
     if (!activeStages.length) {
       skipped++;
       return;
@@ -3228,6 +3247,15 @@ async function applyConsentDecisionForGlobal(global, appConsentRequestId, decisi
   );
 
   const failed = results.filter((item) => item.status === 'rejected');
+  if (failed.length) {
+    console.error(
+      'Consent decision failed',
+      appConsentRequestId,
+      normalizedDecision,
+      failed[0]?.reason?.status || '',
+      failed[0]?.reason?.message || failed[0]?.reason || '',
+    );
+  }
   return {
     processed: results.length - failed.length,
     skipped,
