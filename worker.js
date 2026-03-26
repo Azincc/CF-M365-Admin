@@ -2771,12 +2771,20 @@ async function graphRequestJson(url, token, fetcher, options = {}) {
   return data;
 }
 
-async function graphRequestCollection(url, token, fetcher, maxPages = 10) {
+async function graphRequestCollection(url, token, fetcher, optionsOrMaxPages = {}, maxPages = 10) {
+  const options =
+    typeof optionsOrMaxPages === 'number'
+      ? {}
+      : (optionsOrMaxPages || {});
+  const pageLimit =
+    typeof optionsOrMaxPages === 'number'
+      ? optionsOrMaxPages
+      : maxPages;
   let nextUrl = url;
   let pages = 0;
   const items = [];
-  while (nextUrl && pages < maxPages) {
-    const data = await graphRequestJson(nextUrl, token, fetcher);
+  while (nextUrl && pages < pageLimit) {
+    const data = await graphRequestJson(nextUrl, token, fetcher, options);
     if (Array.isArray(data.value)) items.push(...data.value);
     nextUrl = data['@odata.nextLink'] || '';
     pages++;
@@ -3773,9 +3781,13 @@ export default {
         for(const g of (cfg.globals||[])){
           try{
             const token = await getAccessTokenForGlobal(g, fetch);
-            const resp = await fetch('https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName,createdDateTime,assignedLicenses&$top=100&$orderby=createdDateTime desc&$count=true',{headers:{Authorization:`Bearer ${token}`,'ConsistencyLevel':'eventual'}});
-            const data = await resp.json();
-            let arr = data.value || [];
+            let arr = await graphRequestCollection(
+              'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName,createdDateTime,assignedLicenses&$top=999&$orderby=createdDateTime desc',
+              token,
+              fetch,
+              { headers: { ConsistencyLevel: 'eventual' } },
+              100,
+            );
             arr = filterProtectedUsers(arr, env, cfg);
 
             const idToName = Object.entries(g.skuMap || {}).reduce((m,[k,v]) => { m[v]=k; return m; }, {});
