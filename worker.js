@@ -3782,7 +3782,7 @@ export default {
           try{
             const token = await getAccessTokenForGlobal(g, fetch);
             let arr = await graphRequestCollection(
-              'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName,createdDateTime,assignedLicenses&$top=999&$orderby=createdDateTime desc',
+              'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName,createdDateTime,assignedLicenses&$top=100&$orderby=createdDateTime desc&$count=true',
               token,
               fetch,
               { headers: { ConsistencyLevel: 'eventual' } },
@@ -3800,7 +3800,9 @@ export default {
               u._globalId = g.id; u._globalLabel = g.label;
             });
             result = result.concat(arr);
-          }catch(e){}
+          }catch(e){
+            console.error('Failed to fetch users for global', g?.label || g?.id || 'unknown', e?.message || e);
+          }
         }
         return jsonResponse(result);
       }
