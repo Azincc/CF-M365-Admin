@@ -3051,6 +3051,58 @@ function getConsentRequestStages(request) {
   return Array.isArray(request?.approval?.stages) ? request.approval.stages : [];
 }
 
+async function submitConsentStageDecision({
+  appConsentRequestId,
+  userConsentRequestId,
+  approvalStageId,
+  decision,
+  justification,
+  token,
+  fetcher,
+}) {
+  const cleanJustification = (justification || '').toString().trim() || undefined;
+  const stageBody = {
+    reviewResult: decision,
+    justification: cleanJustification,
+  };
+
+  try {
+    return await graphRequestJson(
+      `https://graph.microsoft.com/v1.0/identityGovernance/appConsent/appConsentRequests/${appConsentRequestId}/userConsentRequests/${userConsentRequestId}/approval/stages/${approvalStageId}`,
+      token,
+      fetcher,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(stageBody),
+      },
+    );
+  } catch (error) {
+    if (error?.status !== 404) throw error;
+
+    // Fallback: some tenants/Graph surfaces expose the update through the approval
+    // navigation property rather than the stage subresource.
+    return await graphRequestJson(
+      `https://graph.microsoft.com/v1.0/identityGovernance/appConsent/appConsentRequests/${appConsentRequestId}/userConsentRequests/${userConsentRequestId}/approval`,
+      token,
+      fetcher,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stages: [
+            {
+              id: approvalStageId,
+              reviewResult: decision,
+              justification: cleanJustification,
+            },
+          ],
+        }),
+      },
+    );
+  }
+}
+
 function buildConsentErrorMessage(error, fallback = '操作失败') {
   if (!error) return fallback;
   if (error.status === 403) {
@@ -3230,19 +3282,15 @@ async function applyConsentDecisionForGlobal(global, appConsentRequestId, decisi
 
   const results = await Promise.allSettled(
     stageTasks.map((task) =>
-      graphRequestJson(
-        `https://graph.microsoft.com/v1.0/identityGovernance/appConsent/appConsentRequests/${appConsentRequestId}/userConsentRequests/${task.userConsentRequestId}/approval/stages/${task.approvalStageId}`,
+      submitConsentStageDecision({
+        appConsentRequestId,
+        userConsentRequestId: task.userConsentRequestId,
+        approvalStageId: task.approvalStageId,
+        decision: normalizedDecision,
+        justification,
         token,
         fetcher,
-        {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            reviewResult: normalizedDecision,
-            justification: (justification || '').toString().trim() || undefined,
-          }),
-        },
-      ),
+      }),
     ),
   );
 
