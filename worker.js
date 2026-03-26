@@ -5,6 +5,7 @@ const KV = {
   INVITES: 'invites', // JSON array
   COMPAT_CARDS: 'cards', // backward compatibility
 };
+const INVITE_COORDINATOR_NAME = 'invite-coordinator';
 
 const DEFAULT_CONFIG = {
   adminPath: '/admin',
@@ -83,11 +84,11 @@ async function setConfig(env, cfg) {
   await env.CONFIG_KV.put(KV.CONFIG, JSON.stringify(cfg));
 }
 
-async function ensureInvites(env) {
+async function readInvitesFromKv(env) {
   let data = await env.CONFIG_KV.get(KV.INVITES, 'json');
-  if (!data) {
+  if (!Array.isArray(data)) {
     const compat = await env.CONFIG_KV.get(KV.COMPAT_CARDS, 'json');
-    if (compat) {
+    if (Array.isArray(compat)) {
       await env.CONFIG_KV.put(KV.INVITES, JSON.stringify(compat));
       data = compat;
     } else {
@@ -97,13 +98,35 @@ async function ensureInvites(env) {
   }
   return data;
 }
-async function getInvites(env) {
-  const data = await env.CONFIG_KV.get(KV.INVITES, 'json');
-  if (data) return data;
-  return await ensureInvites(env);
+
+function getInviteCoordinatorStub(env) {
+  const id = env.INVITE_COORDINATOR.idFromName(INVITE_COORDINATOR_NAME);
+  return env.INVITE_COORDINATOR.get(id);
 }
-async function saveInvites(env, list) {
-  await env.CONFIG_KV.put(KV.INVITES, JSON.stringify(list));
+
+async function inviteCoordinatorRequest(env, payload) {
+  const resp = await getInviteCoordinatorStub(env).fetch('https://invite-coordinator.internal/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await resp.json().catch(() => ({ success: false, message: '邀请码协调器返回无效响应' }));
+  if (!resp.ok || data.success === false) {
+    const err = new Error(data.message || `邀请码操作失败（${resp.status}）`);
+    err.status = resp.status;
+    throw err;
+  }
+  return data;
+}
+async function getInvites(env) {
+  const data = await inviteCoordinatorRequest(env, { action: 'list' });
+  return Array.isArray(data.list) ? data.list : [];
+}
+async function generateInvites(env, payload) {
+  return await inviteCoordinatorRequest(env, { action: 'generate', ...payload });
+}
+async function deleteInvitesByCodes(env, codes) {
+  return await inviteCoordinatorRequest(env, { action: 'bulkDelete', codes });
 }
 
 async function createSession(env) {
@@ -121,6 +144,114 @@ async function verifySession(env, req) {
 
 function htmlResponse(html, status = 200) {
   return new Response(html, { status, headers: { 'Content-Type': 'text/html;charset=UTF-8' } });
+}
+
+export class InviteCoordinator {
+  constructor(state, env) {
+    this.state = state;
+    this.env = env;
+    this.queue = Promise.resolve();
+  }
+
+  async fetch(request) {
+    if (request.method !== 'POST') {
+      return jsonResponse({ success: false, message: 'Method Not Allowed' }, 405);
+    }
+
+    const body = await request.json().catch(() => ({}));
+    const run = async () => {
+      switch (body.action) {
+        case 'ensure':
+        case 'list':
+          return await this.handleList();
+        case 'generate':
+          return await this.handleGenerate(body);
+        case 'bulkDelete':
+          return await this.handleBulkDelete(body);
+        case 'consume':
+          return await this.handleConsume(body);
+        default:
+          return jsonResponse({ success: false, message: '未知的邀请码操作' }, 400);
+      }
+    };
+
+    const task = this.queue.then(run, run);
+    this.queue = task.catch(() => {});
+    try {
+      return await task;
+    } catch (error) {
+      return jsonResponse({ success: false, message: error?.message || '邀请码操作失败' }, error?.status || 500);
+    }
+  }
+
+  async loadInvites() {
+    return await readInvitesFromKv(this.env);
+  }
+
+  async persistInvites(list) {
+    await this.env.CONFIG_KV.put(KV.INVITES, JSON.stringify(list));
+  }
+
+  async handleList() {
+    const list = await this.loadInvites();
+    return jsonResponse({ success: true, list });
+  }
+
+  async handleGenerate(body) {
+    const sets = Array.isArray(body.sets) ? body.sets : [];
+    const length = Number(body.length || 16);
+    const qty = Number(body.quantity || 1);
+    const limit = Number(body.limit || 1);
+    const scopes = Array.isArray(body.scopes) ? body.scopes : [];
+    const dict = {
+      upper: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+      lower: 'abcdefghijklmnopqrstuvwxyz',
+      digit: '0123456789',
+      sym: '!@#$%^&*()-_=+[]{}<>?',
+    };
+
+    let pool = '';
+    sets.forEach((setName) => {
+      if (dict[setName]) pool += dict[setName];
+    });
+    if (!pool) return jsonResponse({ success: false, message: '请选择字符集' }, 400);
+    if (!scopes.length) return jsonResponse({ success: false, message: '请选择限制范围' }, 400);
+
+    const invites = await this.loadInvites();
+    for (let i = 0; i < qty; i++) {
+      let code = '';
+      for (let j = 0; j < length; j++) code += pool[Math.floor(Math.random() * pool.length)];
+      invites.push({ code, limit, used: 0, createdAt: Date.now(), usedAt: null, allowed: scopes });
+    }
+    await this.persistInvites(invites);
+    return jsonResponse({ success: true, count: qty });
+  }
+
+  async handleBulkDelete(body) {
+    const codes = Array.isArray(body.codes) ? body.codes : [];
+    const codeSet = new Set(codes);
+    const invites = await this.loadInvites();
+    const filtered = invites.filter((item) => !codeSet.has(item.code));
+    await this.persistInvites(filtered);
+    return jsonResponse({ success: true, removed: invites.length - filtered.length });
+  }
+
+  async handleConsume(body) {
+    const inviteCode = body.inviteCode;
+    const globalId = body.globalId;
+    const skuName = body.skuName;
+    const invites = await this.loadInvites();
+    const result = validateInviteUsage(invites, inviteCode, globalId, skuName);
+    if (!result.ok) return jsonResponse({ success: false, message: result.message }, 409);
+
+    invites[result.idx] = {
+      ...result.invite,
+      used: Number(result.invite.used || 0) + 1,
+      usedAt: Date.now(),
+    };
+    await this.persistInvites(invites);
+    return jsonResponse({ success: true });
+  }
 }
 
 function sanitizeSkuMap(str) {
@@ -389,12 +520,10 @@ function renderRegisterPage({
   protectedPrefixes,
   turnstileSiteKey,
   inviteMode,
-  adminPath,
 }) {
   const disableGlobal = disableSelectIfSingle(globals);
   const selectedGlobal = globals.find(g => g.id === selectedGlobalId) || globals[0] || null;
   const disableSku = disableSelectIfSingle(skuDisplayList);
-  const safeAdminPath = escapeHtml(adminPath);
   const selectedGlobalLabel = selectedGlobal ? escapeHtml(selectedGlobal.label) : '未配置租户';
   const initialSkuName = skuDisplayList?.[0]?.name || '';
   const initialSkuLabel = skuDisplayList?.[0]?.label || '暂无 SKU';
@@ -665,7 +794,6 @@ ${siteKeyScript}
       <span>Powered by Cloudflare Workers</span>
       <div class="footer-links">
         <a class="icon-link" href="${GITHUB_LINK}" target="_blank" rel="noopener noreferrer">${GITHUB_ICON} CF-M365-Admin</a>
-        <a class="icon-link admin-link" href="${safeAdminPath}/login">进入后台管理</a>
       </div>
     </div>
   </section>
@@ -820,7 +948,16 @@ ${siteKeyScript}
     if(inviteMode) form.append('inviteCode', inviteCode);
     if(turnstileOn){
       const v = document.querySelector('[name="cf-turnstile-response"]');
-      form.append('cf-turnstile-response', v ? v.value : '');
+      const turnstileToken = v ? v.value.trim() : '';
+      if(!turnstileToken){
+        btn.disabled = false;
+        btn.innerText = '创建并分配账号';
+        msg.className='message error';
+        msg.style.display='block';
+        msg.innerText='请先完成人机验证';
+        return;
+      }
+      form.append('cf-turnstile-response', turnstileToken);
     }
 
     try{
@@ -3192,17 +3329,12 @@ function validateInviteUsage(invites, inviteCode, globalId, skuName) {
 }
 
 async function consumeInviteAfterSuccess(env, inviteCode, globalId, skuName) {
-  const invites = await getInvites(env);
-  const result = validateInviteUsage(invites, inviteCode, globalId, skuName);
-  if (!result.ok) return result;
-
-  invites[result.idx] = {
-    ...result.invite,
-    used: Number(result.invite.used || 0) + 1,
-    usedAt: Date.now(),
-  };
-  await saveInvites(env, invites);
-  return { ok: true };
+  try {
+    await inviteCoordinatorRequest(env, { action: 'consume', inviteCode, globalId, skuName });
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, message: error?.message || '邀请码不可用' };
+  }
 }
 
 async function rollbackCreatedUser(global, userId, token, fetchImpl = fetch) {
@@ -3245,14 +3377,17 @@ async function handleRegister(env, req, cfg) {
   }
 
   // turnstile verify
-  if(cfg.turnstile?.secretKey && turnstileToken){
+  if(cfg.turnstile?.secretKey){
+    if(!turnstileToken){
+      return jsonResponse({success:false,message:'请先完成人机验证'},400);
+    }
     const ver = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({secret:cfg.turnstile.secretKey,response:turnstileToken,remoteip:clientIp})
     });
-    const verData = await ver.json();
-    if(!verData.success) return jsonResponse({success:false,message:'人机验证失败'},400);
+    const verData = await ver.json().catch(()=>({success:false}));
+    if(!ver.ok || !verData.success) return jsonResponse({success:false,message:'人机验证失败'},400);
   }
 
   const userEmail = `${username}@${global.defaultDomain}`;
@@ -3331,6 +3466,10 @@ export default {
 
     // redirect to setup if not installed
     if(!installed && !isSetupPath) return redirect(`${adminPath}/setup`);
+    if(installed && isSetupPath){
+      if(await verifySession(env, request)) return redirect(`${adminPath}/dashboard`);
+      return redirect(`${adminPath}/login`);
+    }
 
     /* ---------- Setup ---------- */
     if(isSetupPath){
@@ -3403,7 +3542,12 @@ export default {
     }
     if(url.pathname === `${adminPath}/invites`){
       if(!(await verifySession(env, request))) return redirect(`${adminPath}/login`);
-      return htmlResponse(renderInvitesPage(adminPath, cfg.globals||[]));
+      const inviteGlobals = (cfg.globals || []).map((g) => ({
+        id: g.id,
+        label: g.label,
+        skuMap: g.skuMap || {},
+      }));
+      return htmlResponse(renderInvitesPage(adminPath, inviteGlobals));
     }
     if(url.pathname === `${adminPath}/settings`){
       if(!(await verifySession(env, request))) return redirect(`${adminPath}/login`);
@@ -3752,43 +3896,24 @@ export default {
 
       // invites
       if(url.pathname === `${adminPath}/api/invites` && request.method==='GET'){
-        await ensureInvites(env);
         let list = await getInvites(env);
         return jsonResponse(list);
       }
       if(url.pathname === `${adminPath}/api/invites/generate` && request.method==='POST'){
         const body = await request.json().catch(()=>({}));
-        const sets = body.sets||[];
-        const length = body.length||16;
-        const qty = body.quantity||1;
-        const limit = body.limit||1;
-        const scopes = body.scopes||[];
-        const dict = {
-          upper: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
-          lower: 'abcdefghijklmnopqrstuvwxyz',
-          digit: '0123456789',
-          sym: '!@#$%^&*()-_=+[]{}<>?'
-        };
-        let pool = '';
-        sets.forEach(s=>{ if(dict[s]) pool+=dict[s]; });
-        if(!pool) return jsonResponse({success:false,message:'请选择字符集'},400);
-        if(!scopes.length) return jsonResponse({success:false,message:'请选择限制范围'},400);
-        await ensureInvites(env);
-        const invites = await getInvites(env);
-        for(let i=0;i<qty;i++){
-          let code=''; for(let j=0;j<length;j++) code+=pool[Math.floor(Math.random()*pool.length)];
-          invites.push({code,limit,used:0,createdAt:Date.now(),usedAt:null,allowed:scopes});
-        }
-        await saveInvites(env,invites);
-        return jsonResponse({success:true,count:qty});
+        const result = await generateInvites(env, {
+          sets: body.sets || [],
+          length: body.length || 16,
+          quantity: body.quantity || 1,
+          limit: body.limit || 1,
+          scopes: body.scopes || [],
+        });
+        return jsonResponse({success:true,count:result.count});
       }
       if(url.pathname === `${adminPath}/api/invites/bulk` && request.method==='DELETE'){
         const body = await request.json().catch(()=>({codes:[]}));
-        const codes = body.codes||[];
-        const invites = await getInvites(env);
-        const filtered = invites.filter(c=>!codes.includes(c.code));
-        await saveInvites(env, filtered);
-        return jsonResponse({success:true,removed: codes.length});
+        const result = await deleteInvitesByCodes(env, body.codes || []);
+        return jsonResponse({success:true,removed: result.removed});
       }
     }
 
@@ -3826,7 +3951,6 @@ export default {
         protectedPrefixes: cfg.protectedPrefixes || [],
         turnstileSiteKey: cfg.turnstile?.siteKey || '',
         inviteMode: !!cfg.invite?.enabled,
-        adminPath,
       }));
     }
 

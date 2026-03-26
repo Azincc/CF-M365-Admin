@@ -105,15 +105,23 @@ Workers → KV → Create namespace
 建议命名：
 - `CONFIG_KV`
 
-### 2）创建 / 更新 Worker
+### 2）创建 Durable Object
+Workers → Durable Objects → Create namespace  
+建议类名 / 绑定名：
+- `InviteCoordinator`
+- `INVITE_COORDINATOR`
+
+### 3）创建 / 更新 Worker
 将新版本脚本粘贴到 Worker 编辑器中并部署。
 
-### 3）绑定 KV
+### 4）绑定资源
 Worker Settings → Bindings  
 - KV namespace bindings：
   - `CONFIG_KV` → 选择你的 KV
+- Durable Object bindings：
+  - `INVITE_COORDINATOR` → `InviteCoordinator`
 
-### 4）可选：环境变量（高级用法）
+### 5）可选：环境变量（高级用法）
 - `HIDDEN_USER`：可选“静默保护”名单（英文逗号分隔，仅匹配用户名 @ 前缀）  
   - 例：`admin,root,superadmin`  
   - 适合放置最关键的用户名（无法在后台误改）
@@ -125,7 +133,7 @@ Worker Settings → Bindings
 
 ## 🚀 快速开始（从 0 到可用）
 
-1. 部署 Worker 并绑定 `CONFIG_KV`
+1. 部署 Worker，并绑定 `CONFIG_KV` 与 `INVITE_COORDINATOR`
 2. 访问你的 Worker 域名，进入安装向导
 3. 设置：
    - 管理员用户名

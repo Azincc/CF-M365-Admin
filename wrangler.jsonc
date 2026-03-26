@@ -4,6 +4,22 @@
   "main": "worker.js",
   "compatibility_date": "2026-03-18",
   "workers_dev": true,
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "INVITE_COORDINATOR",
+        "class_name": "InviteCoordinator"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "InviteCoordinator"
+      ]
+    }
+  ],
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1

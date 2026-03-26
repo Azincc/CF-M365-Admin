@@ -106,15 +106,23 @@ Workers → KV → Create namespace
 Recommended:
 - `CONFIG_KV`
 
-### 2) Create/Update Worker
+### 2) Create Durable Object
+Workers → Durable Objects → Create namespace  
+Recommended class/binding:
+- `InviteCoordinator`
+- `INVITE_COORDINATOR`
+
+### 3) Create/Update Worker
 Paste `worker.js`  script into your Worker and deploy.
 
-### 3) Bind KV
+### 4) Bind Resources
 Worker Settings → Bindings  
 - KV namespace bindings:
   - `CONFIG_KV`
+- Durable Object bindings:
+  - `INVITE_COORDINATOR` → `InviteCoordinator`
 
-### 4) Optional env var (hard “silent protection”)
+### 5) Optional env var (hard “silent protection”)
 - `HIDDEN_USER`: comma-separated **reserved usernames** (local-part only)  
   - Example: `admin,root,superadmin`
 
@@ -125,7 +133,7 @@ Worker Settings → Bindings
 
 ## 🚀 Quick Start
 
-1. Deploy Worker and bind `CONFIG_KV`
+1. Deploy Worker and bind both `CONFIG_KV` and `INVITE_COORDINATOR`
 2. Visit your Worker domain to open the setup wizard
 3. Configure:
    - Admin username
