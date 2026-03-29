@@ -218,13 +218,15 @@ export class InviteCoordinator {
     if (!scopes.length) return jsonResponse({ success: false, message: '请选择限制范围' }, 400);
 
     const invites = await this.loadInvites();
+    const codes = [];
     for (let i = 0; i < qty; i++) {
       let code = '';
       for (let j = 0; j < length; j++) code += pool[Math.floor(Math.random() * pool.length)];
       invites.push({ code, limit, used: 0, createdAt: Date.now(), usedAt: null, allowed: scopes });
+      codes.push(code);
     }
     await this.persistInvites(invites);
-    return jsonResponse({ success: true, count: qty });
+    return jsonResponse({ success: true, count: qty, codes });
   }
 
   async handleBulkDelete(body) {
@@ -2440,7 +2442,7 @@ function renderInvitesPage(adminPath, globals) {
     </div>
     <div class="footer">
       <button class="btn-ghost" onclick="closeModal('modalGen')">取消生成</button>
-      <button id="doGen">确定生成</button>
+      <button id="doGen">生成并导出</button>
     </div>
   </div>
 </div>
@@ -2540,6 +2542,32 @@ function getSelectedInviteCodes(){
   return Array.from(selectedInviteCodes);
 }
 
+function getInviteExportFilename(prefix){
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2,'0');
+  const stamp = now.getFullYear()
+    + pad(now.getMonth() + 1)
+    + pad(now.getDate())
+    + '-'
+    + pad(now.getHours())
+    + pad(now.getMinutes())
+    + pad(now.getSeconds());
+  return (prefix || 'invites') + '-' + stamp + '.txt';
+}
+
+function downloadInviteCodes(codes, filename){
+  if(!Array.isArray(codes) || !codes.length) return;
+  const blob = new Blob([codes.join('\\n')], {type:'text/plain;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename || getInviteExportFilename('invites');
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 0);
+}
+
 function setBulkActionDisabled(disabled){
   ['btnDelInvites','btnExport','btnMobileDelete','btnMobileExport'].forEach(id=>{
     const el = document.getElementById(id);
@@ -2609,7 +2637,12 @@ document.getElementById('doGen').onclick=async()=>{
   };
   const res=await fetch(adminPath+'/api/invites/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
   const data=await res.json();
-  if(data.success){ alert('生成完成，新增 '+data.count+' 条'); closeModal('modalGen'); loadInvites(); }
+  if(data.success){
+    downloadInviteCodes(data.codes || [], getInviteExportFilename('generated-invites'));
+    alert('生成完成，新增 '+data.count+' 条，已自动导出本次邀请码');
+    closeModal('modalGen');
+    await loadInvites();
+  }
   else alert(data.message||'生成失败');
 };
 
@@ -2625,10 +2658,7 @@ async function deleteSelectedInvites(){
 function exportSelectedInvites(){
   const sel = getSelectedInviteCodes();
   if(!sel.length) return alert('请选择邀请码');
-  const blob = new Blob([sel.join('\\n')], {type:'text/plain'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href=url; a.download='invites.txt'; a.click();
-  URL.revokeObjectURL(url);
+  downloadInviteCodes(sel, getInviteExportFilename('selected-invites'));
 }
 
 document.getElementById('btnDelInvites').onclick=deleteSelectedInvites;
@@ -3908,7 +3938,7 @@ export default {
           limit: body.limit || 1,
           scopes: body.scopes || [],
         });
-        return jsonResponse({success:true,count:result.count});
+        return jsonResponse(result);
       }
       if(url.pathname === `${adminPath}/api/invites/bulk` && request.method==='DELETE'){
         const body = await request.json().catch(()=>({codes:[]}));
