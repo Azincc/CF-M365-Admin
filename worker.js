@@ -542,6 +542,8 @@ function renderRegisterPage({
   protectedPrefixes,
   turnstileSiteKey,
   inviteMode,
+  notice = '',
+  noticeType = 'error',
 }) {
   const disableGlobal = disableSelectIfSingle(globals);
   const selectedGlobal = globals.find(g => g.id === selectedGlobalId) || globals[0] || null;
@@ -560,6 +562,7 @@ function renderRegisterPage({
   const registrationDesc = inviteMode
     ? '校验邀请码后自动创建账号并分配许可证。'
     : '选择全局与订阅后，系统会自动完成账号创建与许可证分配。';
+  const safeNotice = notice ? `<div class="message ${noticeType === 'success' ? 'success' : 'error'}" style="display:block;margin-bottom:16px;">${escapeHtml(notice)}</div>` : '';
 
   const globalOptions = globals
     .map((g) => {
@@ -743,6 +746,8 @@ ${siteKeyScript}
           <span class="form-tag">${inviteMode ? '需要邀请码' : '无需邀请码'}</span>
         </div>
       </div>
+
+      ${safeNotice}
 
       <form id="regForm">
         <input type="hidden" name="globalId" id="globalId" value="${selectedGlobal ? escapeHtml(selectedGlobal.id) : ''}">
@@ -3744,9 +3749,10 @@ export default {
 
       await env.CONFIG_KV.delete(KV.DOMAIN_SESS_PREFIX + sessionToken);
       const successParams = new URLSearchParams();
+      successParams.set('g', global.id);
       successParams.set('noticeType', 'success');
-      successParams.set('notice', `修改成功，新账号：${nextUpn}`);
-      return redirect(`/domain-switch?${successParams.toString()}`, 303);
+      successParams.set('notice', `后缀域名修改成功，新账号：${nextUpn}`);
+      return redirect(`/?${successParams.toString()}`, 303);
     }
 
     /* ---------- Admin HTML Pages ---------- */
@@ -4152,6 +4158,8 @@ export default {
       const globals = (cfg.globals || []).map(g => ({ id: g.id, label: g.label }));
       const selectedGlobalId = url.searchParams.get('g') || globals[0]?.id || '';
       const selectedGlobal = (cfg.globals || []).find(g => g.id === selectedGlobalId) || (cfg.globals || [])[0];
+      const notice = (url.searchParams.get('notice') || '').trim();
+      const noticeType = url.searchParams.get('noticeType') === 'success' ? 'success' : 'error';
 
       // Build SKU list with remaining counts (server-rendered to avoid exposing admin-query APIs)
       let skuDisplayList = [];
@@ -4181,6 +4189,8 @@ export default {
         protectedPrefixes: cfg.protectedPrefixes || [],
         turnstileSiteKey: cfg.turnstile?.siteKey || '',
         inviteMode: !!cfg.invite?.enabled,
+        notice,
+        noticeType,
       }));
     }
 
