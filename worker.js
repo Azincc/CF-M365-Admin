@@ -2914,6 +2914,32 @@ async function fetchTenantDomains(global, fetcher) {
   return Array.isArray(data.value) ? data.value.filter((d) => d?.id && d.isVerified) : [];
 }
 
+async function buildDomainSwitchLoginState(env, origin, globals = []) {
+  const availableGlobals = (globals || []).filter((g) => g.id && g.tenantId && g.clientId && g.clientSecret);
+  const loginLinks = {};
+
+  for (const g of availableGlobals) {
+    const stateToken = crypto.randomUUID();
+    await env.CONFIG_KV.put(KV.DOMAIN_STATE_PREFIX + stateToken, JSON.stringify({ globalId: g.id }), { expirationTtl: 600 });
+    const redirectUri = `${origin}/domain-switch/callback`;
+    const auth = new URL(`https://login.microsoftonline.com/${g.tenantId}/oauth2/v2.0/authorize`);
+    auth.searchParams.set('client_id', g.clientId);
+    auth.searchParams.set('response_type', 'code');
+    auth.searchParams.set('redirect_uri', redirectUri);
+    auth.searchParams.set('response_mode', 'query');
+    auth.searchParams.set('scope', 'openid profile email User.Read');
+    auth.searchParams.set('state', stateToken);
+    loginLinks[g.id] = auth.toString();
+  }
+
+  return { globals: availableGlobals, loginLinks };
+}
+
+async function renderDomainSwitchLoginResponse(env, cfg, origin, notice = '', status = 200, noticeType = 'error') {
+  const loginState = await buildDomainSwitchLoginState(env, origin, cfg.globals || []);
+  return htmlResponse(renderDomainSwitchPage({ ...loginState, session: null, domains: [], notice, noticeType }), status);
+}
+
 async function graphRequestJson(url, token, fetcher, options = {}) {
   const headers = { Authorization: `Bearer ${token}`, ...(options.headers || {}) };
   const resp = await fetcher(url, { ...options, headers });
@@ -3625,35 +3651,22 @@ export default {
 
     /* ---------- Public domain switch ---------- */
     if (request.method === 'GET' && url.pathname === '/domain-switch') {
-      const globals = (cfg.globals || []).filter((g) => g.id && g.tenantId && g.clientId && g.clientSecret);
-      const loginLinks = {};
-      for (const g of globals) {
-        const stateToken = crypto.randomUUID();
-        await env.CONFIG_KV.put(KV.DOMAIN_STATE_PREFIX + stateToken, JSON.stringify({ globalId: g.id }), { expirationTtl: 600 });
-        const redirectUri = `${url.origin}/domain-switch/callback`;
-        const auth = new URL(`https://login.microsoftonline.com/${g.tenantId}/oauth2/v2.0/authorize`);
-        auth.searchParams.set('client_id', g.clientId);
-        auth.searchParams.set('response_type', 'code');
-        auth.searchParams.set('redirect_uri', redirectUri);
-        auth.searchParams.set('response_mode', 'query');
-        auth.searchParams.set('scope', 'openid profile email User.Read');
-        auth.searchParams.set('state', stateToken);
-        loginLinks[g.id] = auth.toString();
-      }
-      return htmlResponse(renderDomainSwitchPage({ globals, loginLinks, session: null, domains: [] }));
+      const notice = (url.searchParams.get('notice') || '').trim();
+      const noticeType = url.searchParams.get('noticeType') === 'success' ? 'success' : 'error';
+      return renderDomainSwitchLoginResponse(env, cfg, url.origin, notice, 200, noticeType);
     }
 
     if (request.method === 'GET' && url.pathname === '/domain-switch/callback') {
       const code = url.searchParams.get('code') || '';
       const state = url.searchParams.get('state') || '';
-      if (!code || !state) return htmlResponse(renderDomainSwitchPage({ globals: [], loginLinks: {}, session: null, domains: [], notice: '登录参数缺失，请重试。' }), 400);
+      if (!code || !state) return renderDomainSwitchLoginResponse(env, cfg, url.origin, '登录参数缺失，请重试。', 400);
 
       const stateRaw = await env.CONFIG_KV.get(KV.DOMAIN_STATE_PREFIX + state);
       await env.CONFIG_KV.delete(KV.DOMAIN_STATE_PREFIX + state);
-      if (!stateRaw) return htmlResponse(renderDomainSwitchPage({ globals: [], loginLinks: {}, session: null, domains: [], notice: '登录状态已失效，请重新发起登录。' }), 400);
+      if (!stateRaw) return renderDomainSwitchLoginResponse(env, cfg, url.origin, '登录状态已失效，请重新发起登录。', 400);
       const stateObj = JSON.parse(stateRaw);
       const global = (cfg.globals || []).find((g) => g.id === stateObj.globalId);
-      if (!global) return htmlResponse(renderDomainSwitchPage({ globals: [], loginLinks: {}, session: null, domains: [], notice: '未找到对应全局配置。' }), 400);
+      if (!global) return renderDomainSwitchLoginResponse(env, cfg, url.origin, '未找到对应全局配置。', 400);
 
       const redirectUri = `${url.origin}/domain-switch/callback`;
       const params = new URLSearchParams();
@@ -3666,13 +3679,13 @@ export default {
       const tokenResp = await fetch(`https://login.microsoftonline.com/${global.tenantId}/oauth2/v2.0/token`, { method: 'POST', body: params });
       const tokenData = await tokenResp.json().catch(() => ({}));
       if (!tokenResp.ok || !tokenData.access_token) {
-        return htmlResponse(renderDomainSwitchPage({ globals: [], loginLinks: {}, session: null, domains: [], notice: tokenData?.error_description || '登录换取令牌失败。' }), 400);
+        return renderDomainSwitchLoginResponse(env, cfg, url.origin, tokenData?.error_description || '登录换取令牌失败。', 400);
       }
 
       const idPayload = parseJwtPayload(tokenData.id_token || '');
       const tid = (idPayload.tid || '').toString();
       if (!tid || tid.toLowerCase() !== String(global.tenantId || '').toLowerCase()) {
-        return htmlResponse(renderDomainSwitchPage({ globals: [], loginLinks: {}, session: null, domains: [], notice: '当前账号不在已添加全局内。' }), 403);
+        return renderDomainSwitchLoginResponse(env, cfg, url.origin, '当前账号不在已添加全局内。', 403);
       }
 
       const me = await graphRequestJson('https://graph.microsoft.com/v1.0/me?$select=id,userPrincipalName,displayName', tokenData.access_token, fetch);
@@ -3700,13 +3713,13 @@ export default {
       const form = await request.formData();
       const sessionToken = (form.get('sessionToken') || '').toString();
       const domain = (form.get('domain') || '').toString().trim().toLowerCase();
-      if (!sessionToken || !domain) return htmlResponse(renderDomainSwitchPage({ globals: [], loginLinks: {}, session: null, domains: [], notice: '缺少必要参数。' }), 400);
+      if (!sessionToken || !domain) return renderDomainSwitchLoginResponse(env, cfg, url.origin, '缺少必要参数。', 400);
 
       const raw = await env.CONFIG_KV.get(KV.DOMAIN_SESS_PREFIX + sessionToken);
-      if (!raw) return htmlResponse(renderDomainSwitchPage({ globals: [], loginLinks: {}, session: null, domains: [], notice: '会话已过期，请重新登录。' }), 400);
+      if (!raw) return renderDomainSwitchLoginResponse(env, cfg, url.origin, '会话已过期，请重新登录。', 400);
       const sess = JSON.parse(raw);
       const global = (cfg.globals || []).find((g) => g.id === sess.globalId);
-      if (!global) return htmlResponse(renderDomainSwitchPage({ globals: [], loginLinks: {}, session: null, domains: [], notice: '全局配置不存在。' }), 404);
+      if (!global) return renderDomainSwitchLoginResponse(env, cfg, url.origin, '全局配置不存在。', 404);
 
       const domains = await fetchTenantDomains(global, fetch);
       if (!domains.some((d) => String(d.id || '').toLowerCase() === domain)) {
@@ -3730,7 +3743,10 @@ export default {
       }
 
       await env.CONFIG_KV.delete(KV.DOMAIN_SESS_PREFIX + sessionToken);
-      return htmlResponse(renderDomainSwitchPage({ globals: [], loginLinks: {}, session: null, domains: [], notice: `修改成功，新账号：${nextUpn}`, noticeType: 'success' }));
+      const successParams = new URLSearchParams();
+      successParams.set('noticeType', 'success');
+      successParams.set('notice', `修改成功，新账号：${nextUpn}`);
+      return redirect(`/domain-switch?${successParams.toString()}`, 303);
     }
 
     /* ---------- Admin HTML Pages ---------- */
