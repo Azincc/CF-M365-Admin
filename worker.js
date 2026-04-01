@@ -4,6 +4,8 @@ const KV = {
   SESS_PREFIX: 'sess:',
   INVITES: 'invites', // JSON array
   COMPAT_CARDS: 'cards', // backward compatibility
+  DOMAIN_STATE_PREFIX: 'domain_state:',
+  DOMAIN_SESS_PREFIX: 'domain_sess:',
 };
 const INVITE_COORDINATOR_NAME = 'invite-coordinator';
 
@@ -54,6 +56,24 @@ function parseCookies(req) {
       return [k, v.join('=')];
     }),
   );
+}
+
+function base64UrlDecode(input) {
+  const normalized = (input || '').replace(/-/g, '+').replace(/_/g, '/');
+  const pad = normalized.length % 4 === 0 ? '' : '='.repeat(4 - (normalized.length % 4));
+  const raw = atob(normalized + pad);
+  const bytes = Uint8Array.from(raw, (c) => c.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
+function parseJwtPayload(token) {
+  try {
+    const parts = (token || '').split('.');
+    if (parts.length < 2) return {};
+    return JSON.parse(base64UrlDecode(parts[1]));
+  } catch {
+    return {};
+  }
 }
 
 function mergeConfig(raw) {
@@ -795,6 +815,7 @@ ${siteKeyScript}
     <div class="form-footer">
       <span>Powered by Cloudflare Workers</span>
       <div class="footer-links">
+        <a class="admin-link" href="/domain-switch">域名自选</a>
         <a class="icon-link" href="${GITHUB_LINK}" target="_blank" rel="noopener noreferrer">${GITHUB_ICON} CF-M365-Admin</a>
       </div>
     </div>
@@ -1267,6 +1288,53 @@ document.getElementById('setupForm').addEventListener('submit', async (e)=>{
   }
 });
 </script>
+</body></html>`;
+}
+
+function renderDomainSwitchPage({ globals, loginLinks, session, domains, notice = '', noticeType = 'error' }) {
+  const safeNotice = notice ? `<div class=\"message ${noticeType === 'success' ? 'success' : 'error'}\">${escapeHtml(notice)}</div>` : '';
+  const globalCards = (globals || [])
+    .map((g) => `<a class=\"pill\" href=\"${escapeHtml(loginLinks[g.id] || '#')}\">使用 ${escapeHtml(g.label)} 登录</a>`)
+    .join('');
+  const domainOptions = (domains || [])
+    .map((d) => `<option value=\"${escapeHtml(d.id)}\">${escapeHtml(d.id)}</option>`)
+    .join('');
+
+  return `<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">
+<title>M365 域名自选</title>
+<style>${baseStyles}
+body{display:grid;place-items:center;min-height:100vh;padding:20px;background:linear-gradient(145deg,#f8fafc,#eef2ff);}
+.shell{width:min(860px,100%);display:grid;gap:16px;}
+.hero{background:linear-gradient(145deg,#0f172a,#0f766e);color:#fff;border-radius:24px;padding:24px;}
+.hero h2{margin:8px 0 10px;font-size:28px;}
+.hero p{margin:0;color:rgba(255,255,255,.8);line-height:1.8;}
+.pills{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px;}
+.pill{display:inline-flex;align-items:center;padding:10px 14px;border-radius:999px;background:#fff;color:#0f172a;font-weight:800;border:1px solid rgba(148,163,184,.35);}
+.meta{display:grid;gap:8px;padding:14px;border:1px solid rgba(148,163,184,.25);border-radius:14px;background:rgba(241,245,249,.7);}
+</style></head><body>
+<div class=\"shell\">
+  <section class=\"hero\"><div class=\"badge\">Domain Switch</div><h2>M365 域名自选</h2><p>先使用 Microsoft 365 账号登录；系统会判断你是否属于已配置全局，并列出可切换域名。</p></section>
+  <section class=\"card\">
+    ${
+      session
+        ? `<div class=\"message success\">已登录：${escapeHtml(session.userPrincipalName || '')}</div>
+           <div class=\"meta\">
+             <div><strong>当前全局：</strong>${escapeHtml(session.globalLabel || '')}</div>
+             <div><strong>当前 UPN：</strong>${escapeHtml(session.userPrincipalName || '')}</div>
+             <div><strong>可选域名：</strong>${domains.length}</div>
+           </div>
+           <form method=\"POST\" action=\"/domain-switch/update\" style=\"margin-top:14px;\">
+             <input type=\"hidden\" name=\"sessionToken\" value=\"${escapeHtml(session.sessionToken)}\">
+             <label class=\"label\">选择新后缀域名</label>
+             <select name=\"domain\" required>${domainOptions}</select>
+             <button type=\"submit\" style=\"margin-top:12px;\">修改用户后缀域名</button>
+           </form>`
+        : `<p style=\"margin-top:0;\">请选择你所属的全局并完成 M365 登录。</p><div class=\"pills\">${globalCards || '<span class=\"muted\">暂无可用全局</span>'}</div>`
+    }
+    ${safeNotice}
+    <div style=\"margin-top:14px;\"><a href=\"/\">返回首页</a></div>
+  </section>
+</div>
 </body></html>`;
 }
 
@@ -2840,6 +2908,12 @@ async function fetchSubscribedSkus(global, fetcher) {
   return Array.isArray(data.value) ? data.value : [];
 }
 
+async function fetchTenantDomains(global, fetcher) {
+  const token = await getAccessTokenForGlobal(global, fetcher);
+  const data = await graphRequestJson('https://graph.microsoft.com/v1.0/domains?$select=id,isVerified,isInitial', token, fetcher);
+  return Array.isArray(data.value) ? data.value.filter((d) => d?.id && d.isVerified) : [];
+}
+
 async function graphRequestJson(url, token, fetcher, options = {}) {
   const headers = { Authorization: `Bearer ${token}`, ...(options.headers || {}) };
   const resp = await fetcher(url, { ...options, headers });
@@ -3547,6 +3621,116 @@ export default {
           }
         });
       }
+    }
+
+    /* ---------- Public domain switch ---------- */
+    if (request.method === 'GET' && url.pathname === '/domain-switch') {
+      const globals = (cfg.globals || []).filter((g) => g.id && g.tenantId && g.clientId && g.clientSecret);
+      const loginLinks = {};
+      for (const g of globals) {
+        const stateToken = crypto.randomUUID();
+        await env.CONFIG_KV.put(KV.DOMAIN_STATE_PREFIX + stateToken, JSON.stringify({ globalId: g.id }), { expirationTtl: 600 });
+        const redirectUri = `${url.origin}/domain-switch/callback`;
+        const auth = new URL(`https://login.microsoftonline.com/${g.tenantId}/oauth2/v2.0/authorize`);
+        auth.searchParams.set('client_id', g.clientId);
+        auth.searchParams.set('response_type', 'code');
+        auth.searchParams.set('redirect_uri', redirectUri);
+        auth.searchParams.set('response_mode', 'query');
+        auth.searchParams.set('scope', 'openid profile email User.Read');
+        auth.searchParams.set('state', stateToken);
+        loginLinks[g.id] = auth.toString();
+      }
+      return htmlResponse(renderDomainSwitchPage({ globals, loginLinks, session: null, domains: [] }));
+    }
+
+    if (request.method === 'GET' && url.pathname === '/domain-switch/callback') {
+      const code = url.searchParams.get('code') || '';
+      const state = url.searchParams.get('state') || '';
+      if (!code || !state) return htmlResponse(renderDomainSwitchPage({ globals: [], loginLinks: {}, session: null, domains: [], notice: '登录参数缺失，请重试。' }), 400);
+
+      const stateRaw = await env.CONFIG_KV.get(KV.DOMAIN_STATE_PREFIX + state);
+      await env.CONFIG_KV.delete(KV.DOMAIN_STATE_PREFIX + state);
+      if (!stateRaw) return htmlResponse(renderDomainSwitchPage({ globals: [], loginLinks: {}, session: null, domains: [], notice: '登录状态已失效，请重新发起登录。' }), 400);
+      const stateObj = JSON.parse(stateRaw);
+      const global = (cfg.globals || []).find((g) => g.id === stateObj.globalId);
+      if (!global) return htmlResponse(renderDomainSwitchPage({ globals: [], loginLinks: {}, session: null, domains: [], notice: '未找到对应全局配置。' }), 400);
+
+      const redirectUri = `${url.origin}/domain-switch/callback`;
+      const params = new URLSearchParams();
+      params.set('client_id', global.clientId);
+      params.set('client_secret', global.clientSecret);
+      params.set('grant_type', 'authorization_code');
+      params.set('code', code);
+      params.set('redirect_uri', redirectUri);
+      params.set('scope', 'openid profile email User.Read');
+      const tokenResp = await fetch(`https://login.microsoftonline.com/${global.tenantId}/oauth2/v2.0/token`, { method: 'POST', body: params });
+      const tokenData = await tokenResp.json().catch(() => ({}));
+      if (!tokenResp.ok || !tokenData.access_token) {
+        return htmlResponse(renderDomainSwitchPage({ globals: [], loginLinks: {}, session: null, domains: [], notice: tokenData?.error_description || '登录换取令牌失败。' }), 400);
+      }
+
+      const idPayload = parseJwtPayload(tokenData.id_token || '');
+      const tid = (idPayload.tid || '').toString();
+      if (!tid || tid.toLowerCase() !== String(global.tenantId || '').toLowerCase()) {
+        return htmlResponse(renderDomainSwitchPage({ globals: [], loginLinks: {}, session: null, domains: [], notice: '当前账号不在已添加全局内。' }), 403);
+      }
+
+      const me = await graphRequestJson('https://graph.microsoft.com/v1.0/me?$select=id,userPrincipalName,displayName', tokenData.access_token, fetch);
+      const domains = await fetchTenantDomains(global, fetch);
+      const sessionToken = crypto.randomUUID();
+      await env.CONFIG_KV.put(
+        KV.DOMAIN_SESS_PREFIX + sessionToken,
+        JSON.stringify({
+          globalId: global.id,
+          globalLabel: global.label || '',
+          userId: me.id,
+          userPrincipalName: me.userPrincipalName || '',
+        }),
+        { expirationTtl: 900 },
+      );
+      return htmlResponse(renderDomainSwitchPage({
+        globals: [],
+        loginLinks: {},
+        session: { sessionToken, globalLabel: global.label || '', userPrincipalName: me.userPrincipalName || '' },
+        domains,
+      }));
+    }
+
+    if (request.method === 'POST' && url.pathname === '/domain-switch/update') {
+      const form = await request.formData();
+      const sessionToken = (form.get('sessionToken') || '').toString();
+      const domain = (form.get('domain') || '').toString().trim().toLowerCase();
+      if (!sessionToken || !domain) return htmlResponse(renderDomainSwitchPage({ globals: [], loginLinks: {}, session: null, domains: [], notice: '缺少必要参数。' }), 400);
+
+      const raw = await env.CONFIG_KV.get(KV.DOMAIN_SESS_PREFIX + sessionToken);
+      if (!raw) return htmlResponse(renderDomainSwitchPage({ globals: [], loginLinks: {}, session: null, domains: [], notice: '会话已过期，请重新登录。' }), 400);
+      const sess = JSON.parse(raw);
+      const global = (cfg.globals || []).find((g) => g.id === sess.globalId);
+      if (!global) return htmlResponse(renderDomainSwitchPage({ globals: [], loginLinks: {}, session: null, domains: [], notice: '全局配置不存在。' }), 404);
+
+      const domains = await fetchTenantDomains(global, fetch);
+      if (!domains.some((d) => String(d.id || '').toLowerCase() === domain)) {
+        return htmlResponse(renderDomainSwitchPage({ globals: [], loginLinks: {}, session: { ...sess, sessionToken }, domains, notice: '所选域名不在允许列表中。' }), 400);
+      }
+
+      const currentUpn = String(sess.userPrincipalName || '').trim().toLowerCase();
+      const local = currentUpn.split('@')[0] || '';
+      if (!local) return htmlResponse(renderDomainSwitchPage({ globals: [], loginLinks: {}, session: { ...sess, sessionToken }, domains, notice: '无法识别当前用户 UPN。' }), 400);
+      const nextUpn = `${local}@${domain}`;
+
+      try {
+        const token = await getAccessTokenForGlobal(global, fetch);
+        await graphRequestJson(`https://graph.microsoft.com/v1.0/users/${sess.userId}`, token, fetch, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userPrincipalName: nextUpn }),
+        });
+      } catch (error) {
+        return htmlResponse(renderDomainSwitchPage({ globals: [], loginLinks: {}, session: { ...sess, sessionToken }, domains, notice: error.message || '修改后缀域名失败。' }), error.status || 500);
+      }
+
+      await env.CONFIG_KV.delete(KV.DOMAIN_SESS_PREFIX + sessionToken);
+      return htmlResponse(renderDomainSwitchPage({ globals: [], loginLinks: {}, session: null, domains: [], notice: `修改成功，新账号：${nextUpn}`, noticeType: 'success' }));
     }
 
     /* ---------- Admin HTML Pages ---------- */
